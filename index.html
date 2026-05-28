@@ -3,37 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<!-- PWA Core -->
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Hotel Pro">
-<meta name="application-name" content="Hotel Pro">
 <meta name="theme-color" content="#0A0E12">
-<meta name="msapplication-TileColor" content="#0A0E12">
-<meta name="msapplication-TileImage" content="icon-144.png">
-<meta name="description" content="Gestion hoteliere complete : chambres, reservations, clients, finances, rapports">
-<!-- Manifest -->
-<link rel="manifest" href="manifest.json">
-<!-- Apple Touch Icons -->
-<link rel="apple-touch-icon" href="icon-152.png">
-<link rel="apple-touch-icon" sizes="72x72"   href="icon-72.png">
-<link rel="apple-touch-icon" sizes="96x96"   href="icon-96.png">
-<link rel="apple-touch-icon" sizes="128x128" href="icon-128.png">
-<link rel="apple-touch-icon" sizes="144x144" href="icon-144.png">
-<link rel="apple-touch-icon" sizes="152x152" href="icon-152.png">
-<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
-<link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
-<!-- Favicon -->
-<link rel="icon" type="image/png" sizes="32x32" href="icon-96.png">
-<link rel="icon" type="image/png" sizes="16x16" href="icon-72.png">
-<!-- iOS Splash Screens -->
-<link rel="apple-touch-startup-image" media="(device-width:320px) and (device-height:568px) and (-webkit-device-pixel-ratio:2)" href="splash-640x1136.png">
-<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2)" href="splash-750x1334.png">
-<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3)" href="splash-1125x2436.png">
-<link rel="apple-touch-startup-image" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:3)" href="splash-1242x2688.png">
-<link rel="apple-touch-startup-image" media="(device-width:768px) and (device-height:1024px) and (-webkit-device-pixel-ratio:2)" href="splash-1536x2048.png">
-<link rel="apple-touch-startup-image" media="(device-width:1024px) and (device-height:1366px) and (-webkit-device-pixel-ratio:2)" href="splash-2048x2732.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-title" content="HotelPro">
 <title>Hotel SaaS Pro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-app-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-firestore-compat.min.js"></script>
@@ -61,6 +36,12 @@ button:active{opacity:.72!important;transform:scale(.95)!important}
 .fade-up{animation:fadeUp .2s ease}
 .toast-in{animation:toastIn .3s cubic-bezier(.34,1.56,.64,1)}
 .marquee-txt{animation:marquee 30s linear infinite;white-space:nowrap;display:inline-block;padding-right:60px}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes ripple{0%{transform:scale(0);opacity:.5}100%{transform:scale(4);opacity:0}}
+.notif-badge{position:absolute;top:-4px;right:-4px;background:#FF5555;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)}
+.tag-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700}
+.ripple-btn{position:relative;overflow:hidden}
 /* Layout */
 .shell{display:flex;flex-direction:column;height:100dvh;overflow:hidden;background:var(--bg)}
 .layout{display:flex;flex:1;overflow:hidden}
@@ -86,32 +67,7 @@ button:active{opacity:.72!important;transform:scale(.95)!important}
 <body>
 <div id="root"></div>
 <script>
-/* ── Service Worker ── */
-if('serviceWorker' in navigator){
-  window.addEventListener('load', async()=>{
-    try{
-      const reg = await navigator.serviceWorker.register('/sw.js');
-      console.log('[PWA] SW enregistre, scope:', reg.scope);
-      reg.addEventListener('updatefound',()=>{
-        const nw=reg.installing; if(!nw) return;
-        nw.addEventListener('statechange',()=>{
-          if(nw.state==='installed'&&navigator.serviceWorker.controller)
-            window.dispatchEvent(new CustomEvent('sw-update-available'));
-        });
-      });
-    } catch(e){ console.warn('[PWA] SW echec:',e); }
-  });
-}
-/* ── Bouton installation PWA ── */
-let _deferredInstall=null;
-window.addEventListener('beforeinstallprompt',e=>{
-  e.preventDefault(); _deferredInstall=e;
-  window.dispatchEvent(new CustomEvent('pwa-installable'));
-});
-window.addEventListener('appinstalled',()=>{
-  _deferredInstall=null;
-  window.dispatchEvent(new CustomEvent('pwa-installed'));
-});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
 <script type="text/babel">
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
@@ -119,34 +75,16 @@ const{useState,useEffect,useRef,useMemo,useCallback}=React;
 /* ═══════════════════════════════════════════════
    FIREBASE CONFIG
 ═══════════════════════════════════════════════ */
-/* ── Firebase config dynamique (modifiable sans redeploiement) ── */
-const FB_DEFAULT={apiKey:"AIzaSyD9nisNmNnagzRp-jNlwTbJ7q5bdPtF9Jw",authDomain:"inte-84ea7.firebaseapp.com",projectId:"inte-84ea7",storageBucket:"inte-84ea7.appspot.com",messagingSenderId:"958738051181",appId:"1:958738051181:web:e305c5d8cb1a4b95680f64"};
-function loadFBConfig(){try{const s=localStorage.getItem("hotel_fb_config");if(s){const c=JSON.parse(s);if(c&&c.projectId&&c.apiKey)return c;}return null;}catch{return null;}}
-function saveFBConfig(cfg){localStorage.setItem("hotel_fb_config",JSON.stringify(cfg));}
-function parseFBConfig(raw){
-  /* accepte JSON standard OU objet JS non-quote (comme la console Firebase) */
-  try{return JSON.parse(raw);}catch{}
-  try{const j=raw.trim().replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g,'$1"$2":').replace(/:\s*'([^']*)'/g,':"$1"');return JSON.parse(j);}catch{}
-  /* extraction champ par champ */
-  const fields=["apiKey","authDomain","projectId","storageBucket","messagingSenderId","appId","measurementId"];
-  const obj={};let found=0;
-  fields.forEach(f=>{const m=raw.match(new RegExp(f+'\\s*[=:]\\s*["\']([^"\']+)["\']'));if(m){obj[f]=m[1];found++;}});
-  return found>=3?obj:null;
-}
+const FB={
+  apiKey: "AIzaSyDVgIZnj4Wi2cq7dbeVyxhqANL2B8k_4bM",
+  authDomain: "terminale-d-e8275.firebaseapp.com",
+  projectId: "terminale-d-e8275",
+  storageBucket: "terminale-d-e8275.firebasestorage.app",
+  messagingSenderId: "282312569044",
+  appId: "1:282312569044:web:a416782c9b45a3d1b80b41"
+};
 let db=null;
-function initFirebase(cfg){
-  try{
-    const c=cfg||loadFBConfig()||FB_DEFAULT;
-    if(firebase.apps.length){firebase.apps.forEach(a=>{try{a.delete();}catch{}});}
-    firebase.initializeApp(c);
-    db=firebase.firestore();
-    db.settings({experimentalForceLongPolling:false,merge:true});
-    db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
-    console.log("Firebase init OK:",c.projectId);
-    return true;
-  }catch(e){console.error("Firebase init error:",e);return false;}
-}
-initFirebase();
+try{if(!firebase.apps.length)firebase.initializeApp(FB);db=firebase.firestore();db.enablePersistence({synchronizeTabs:true}).catch(()=>{});}catch(e){console.warn(e);}
 
 const DEV_PIN="761278",DEV_WA="22678548317";
 
@@ -207,6 +145,78 @@ function syncCollections(hid,setters){
 const fsSet=(hid,col,id,data)=>db?.collection("shops").doc(hid).collection(col).doc(id).set(data,{merge:true});
 const fsUpd=(hid,col,id,data)=>db?.collection("shops").doc(hid).collection(col).doc(id).update(data);
 const fsDel=(hid,col,id)=>db?.collection("shops").doc(hid).collection(col).doc(id).delete();
+
+
+/* ═══════════════════════════════════════════════
+   FONCTIONNALITE 4 : ALERTES & NOTIFICATIONS EN TEMPS RÉEL
+   Calcule les check-ins/outs urgents + soldes impayés
+═══════════════════════════════════════════════ */
+function AlertesPanel({T, reservations, rooms}){
+  const today = dKey(Date.now());
+  const cin = reservations.filter(r=>!r.cancelled&&!r.checkedOut&&r.checkin===today);
+  const cout = reservations.filter(r=>!r.cancelled&&!r.checkedOut&&r.checkout===today);
+  const demain = dKey(Date.now()+86400000);
+  const cinDemain = reservations.filter(r=>!r.cancelled&&r.checkin===demain);
+  const impayes = reservations.filter(r=>!r.cancelled&&r.checkin<=today&&r.checkout>today&&(r.paid||0)<(r.roomTotal||0));
+  const maintenance = rooms.filter(r=>r.status==="maintenance");
+  const items=[
+    ...cin.map(r=>({type:"cin",color:T.green,icon:"📥",msg:`Check-in : ${r.clientName} → Ch.${r.roomNum}`})),
+    ...cout.map(r=>({type:"cout",color:T.orange,icon:"📤",msg:`Check-out : ${r.clientName} (Ch.${r.roomNum})`})),
+    ...impayes.map(r=>({type:"impaye",color:T.red,icon:"⚠️",msg:`Solde impayé : ${r.clientName} — ${fmtF((r.roomTotal||0)-(r.paid||0))}`})),
+    ...cinDemain.map(r=>({type:"demain",color:T.blue,icon:"📅",msg:`Arrivée demain : ${r.clientName} → Ch.${r.roomNum}`})),
+    ...maintenance.map(r=>({type:"maint",color:T.mute,icon:"🔧",msg:`Chambre ${r.num} en maintenance`})),
+  ];
+  if(items.length===0) return null;
+  return(
+    <div style={{background:T.surface,borderRadius:14,padding:12,marginBottom:10}}>
+      <div style={{fontWeight:700,fontSize:12,color:T.accent,marginBottom:8}}>🔔 Alertes du jour ({items.length})</div>
+      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+        {items.slice(0,6).map((a,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:8,background:a.color+"18",borderLeft:`3px solid ${a.color}`,borderRadius:6,padding:"6px 10px"}}>
+            <span style={{fontSize:14}}>{a.icon}</span>
+            <span style={{fontSize:11,color:T.text}}>{a.msg}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FONCTIONNALITE 5 : HISTORIQUE CLIENT (séjours précédents)
+   Affiché dans la fiche client + badge "client fidèle"
+═══════════════════════════════════════════════ */
+function HistoriqueClient({T, client, reservations, services}){
+  const sejours = reservations.filter(r=>!r.cancelled&&(r.clientName||"").toLowerCase().trim()===(client.name||"").toLowerCase().trim());
+  const totalCA = sejours.reduce((s,r)=>s+(r.paid||0),0);
+  const totalNuits = sejours.reduce((s,r)=>s+(r.nights||0),0);
+  const totalSrv = (services||[]).filter(s=>(s.clientName||"").toLowerCase().trim()===(client.name||"").toLowerCase().trim()).reduce((s,r)=>s+(r.amount||0),0);
+  const fidel = sejours.length>=3?"⭐ Fidèle":sejours.length>=1?"✅ Connu":"🆕 Nouveau";
+  if(sejours.length===0) return(<div style={{fontSize:11,color:T.mute,padding:"8px 0"}}>Aucun séjour enregistré</div>);
+  return(
+    <div style={{marginTop:8}}>
+      <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+        {[[sejours.length+"","Séjours",T.blue],[totalNuits+"","Nuits",T.teal],[fmtF(totalCA+totalSrv),"CA total",T.accent]].map(([v,l,c])=>(
+          <div key={l} style={{background:T.sur2,borderRadius:10,padding:"6px 12px",textAlign:"center",flex:"1 1 80px"}}>
+            <div style={{fontWeight:800,color:c,fontSize:14}}>{v}</div>
+            <div style={{fontSize:9,color:T.mute}}>{l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{fontSize:10,color:T.accent,fontWeight:700,marginBottom:6}}>{fidel}</div>
+      <div style={{fontSize:11,color:T.mute,fontWeight:600,marginBottom:4}}>Séjours précédents</div>
+      {sejours.sort((a,b)=>b.checkin.localeCompare(a.checkin)).slice(0,5).map(r=>(
+        <div key={r.id} style={{background:T.sur2,borderRadius:8,padding:"7px 10px",marginBottom:4,fontSize:11}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Ch.{r.roomNum} · {r.checkin} → {r.checkout}</span>
+            <span style={{fontWeight:700,color:T.accent}}>{fmtF(r.paid||0)}</span>
+          </div>
+          <div style={{fontSize:10,color:T.sub,marginTop:2}}>{r.nights}n · {r.payMethod} · {r.source}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════════
    BLE THERMAL PRINTER (ESC/POS 80mm)
@@ -395,6 +405,7 @@ function Dashboard({T,rooms,reservations,expenses,services,hotelName,hotelPhone,
     window.open(`https://wa.me/${(whatsapp||"").replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`,"_blank");
   };
   return(<div style={{padding:12,overflowY:"auto",flex:1}}>
+    <AlertesPanel T={T} reservations={reservations} rooms={rooms}/>
     {/* KPIs */}
     <G4 gap={8}>{[
       {e:"🛏️",l:"Occupation",v:`${taux}%`,s:`${occ}/${actif} ch.`,c:T.accent},
@@ -541,6 +552,7 @@ function Chambres({T,rooms,setRooms,reservations,hid,flash}){
   };
 
   return(<div style={{flex:1,overflowY:"auto",padding:12}}>
+    <CalendrierOccupation T={T} rooms={rooms} reservations={reservations}/>
     <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
       <button onClick={()=>setForm({})} style={{background:T.accent,border:"none",borderRadius:10,padding:"8px 16px",fontWeight:700,color:T.bg,fontSize:13}}>+ Chambre</button>
       <div style={{flex:1,display:"flex",gap:4,overflowX:"auto"}}>
@@ -758,7 +770,7 @@ function Clients({T,clients,setClients,reservations,hid,flash}){
     </Modal>);
   };
 
-  const ClientDetail=({cl,onClose})=>{
+  const ClientDetail=({cl,onClose,services=[]})=>{
     const cres=reservations.filter(r=>!r.cancelled&&(r.clientName===cl.name||r.clientPhone===cl.phone));
     const spent=cres.reduce((s,r)=>s+(r.paid||0),0);const nts=cres.reduce((s,r)=>s+(r.nights||0),0);
     return(<Modal T={T} title={`👤 ${cl.name}`} onClose={onClose}>
@@ -772,6 +784,7 @@ function Clients({T,clients,setClients,reservations,hid,flash}){
         {[{l:"Sejours",v:cres.length,c:T.blue},{l:"Nuits",v:nts,c:T.purple},{l:"Total depense",v:fmtF(spent),c:T.green}].map(({l,v,c})=><div key={l} style={{background:T.sur2,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontSize:16,fontWeight:800,color:c}}>{v}</div><div style={{fontSize:9,color:T.mute,marginTop:2}}>{l}</div></div>)}
       </G3>
       {cres.slice(0,3).map(r=><div key={r.id} style={{background:T.sur2,borderRadius:10,padding:9,marginTop:6,fontSize:11}}><b>Ch.{r.roomNum}</b> · {r.checkin} → {r.checkout} · <span style={{color:T.accent}}>{fmtF(r.paid||0)}</span></div>)}
+      <HistoriqueClient T={T} client={cl} reservations={reservations} services={services||[]}/>
       <div style={{display:"flex",gap:6,marginTop:12}}>
         <button onClick={()=>{setForm(cl);onClose();}} style={{flex:1,background:T.bB.bg,border:`1px solid ${T.bB.bd}`,borderRadius:10,padding:9,color:T.blue,fontSize:12}}>✏️</button>
         <button onClick={()=>window.open(`https://wa.me/${(cl.phone||"").replace(/\D/g,"")}?text=${encodeURIComponent(`Bonjour ${cl.name},`)}`,"_blank")} style={{flex:1,background:T.gB.bg,border:`1px solid ${T.gB.bd}`,borderRadius:10,padding:9,color:T.green,fontSize:12}}>📱 WA</button>
@@ -802,7 +815,7 @@ function Clients({T,clients,setClients,reservations,hid,flash}){
       </div>);
     })}
     {form!==null&&<ClientForm init={form.id?form:null} onDone={saveClient} onClose={()=>setForm(null)}/>}
-    {modal&&<ClientDetail cl={modal} onClose={()=>setModal(null)}/>}
+    {modal&&<ClientDetail cl={modal} onClose={()=>setModal(null)} services={services||[]}/>}
   </div>);
 }
 
@@ -1000,10 +1013,10 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
   const [services,setServices]=useState(()=>lsGet(hid,"services"));
   const [clients,setClients]=useState(()=>lsGet(hid,"clients"));
   const [tab,setTab]=useState("dashboard");
-  const [fbModal,setFbModal]=useState(false);
   const [adminOpen,setAdminOpen]=useState(false);const [adminTab,setAdminTab]=useState("clients");
   const [pinModal,setPinModal]=useState(false);const [pinErr,setPinErr]=useState("");
   const [useBLE,setUseBLE]=useState(true);
+  const [searchOpen,setSearchOpen]=useState(false);
 
   useEffect(()=>syncCollections(hid,{rooms:setRooms,reservations:setReservations,expenses:setExpenses,services:setServices,clients:setClients}),[hid]);
 
@@ -1044,7 +1057,6 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:6}}>
         <FBStatus T={T}/>
-        <button onClick={()=>setFbModal(true)} title="Config Firebase" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 7px",fontSize:12,color:T.mute}}>🔥</button>
         <div style={{display:"flex",background:T.sur2,borderRadius:20,padding:2,gap:1}}>
           {Object.values(TH).map(t=><button key={t.id} onClick={()=>setThemeName(t.id)} style={{background:themeName===t.id?T.accent:"transparent",border:"none",borderRadius:16,width:26,height:26,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>{t.icon}</button>)}
         </div>
@@ -1089,6 +1101,7 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
       </div>
     )}
 
+    {searchOpen&&<RechercheGlobale T={T} rooms={rooms} reservations={reservations} clients={clients} services={services} onClose={()=>setSearchOpen(false)} onNav={(t)=>{if(t==="clients_admin"){setPinModal(true);setPinErr("");}else setTab(t);}}/>}
     {/* PIN MODAL */}
     {pinModal&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.95)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000,padding:16}}>
       <div style={{background:T.surface,borderRadius:28,padding:28,width:"100%",maxWidth:340,border:`1px solid ${T.border}`}}>
@@ -1097,7 +1110,6 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
           onCancel={()=>{setPinModal(false);setPinErr("");}}/>
       </div>
     </div>)}
-    {fbModal&&<FBConfigModal T={T} onClose={()=>setFbModal(false)} onSaved={()=>setFbModal(false)} flash={flash}/>}
   </div>);
 }
 
@@ -1156,140 +1168,107 @@ function DevDashboard({T,themeName,setThemeName,logout,flash}){
   </div>);
 }
 
+
 /* ═══════════════════════════════════════════════
-   PWA INSTALL BANNER
+   FONCTIONNALITE 1 : CALENDRIER D OCCUPATION (vue mensuelle)
+   Affiche l occupation jour par jour sur le mois courant
 ═══════════════════════════════════════════════ */
-function PWABanner({T}){
-  const [show,setShow]=useState(false);
-  const [installed,setInstalled]=useState(false);
-  const [updateReady,setUpdateReady]=useState(false);
+function CalendrierOccupation({T, rooms, reservations}){
+  const [mois, setMois] = React.useState(()=>{const n=new Date();return new Date(n.getFullYear(),n.getMonth(),1);});
+  const ann = mois.getFullYear(), mo = mois.getMonth();
+  const nbJours = new Date(ann, mo+1, 0).getDate();
+  const premier = (new Date(ann, mo, 1).getDay()+6)%7; // lundi=0
+  const jours = Array.from({length:nbJours},(_,i)=>i+1);
+  const totalActives = rooms.filter(r=>r.status!=="maintenance").length || 1;
 
-  useEffect(()=>{
-    const onInstallable=()=>setShow(true);
-    const onInstalled=()=>{setInstalled(true);setShow(false);};
-    const onUpdate=()=>setUpdateReady(true);
-    window.addEventListener('pwa-installable',onInstallable);
-    window.addEventListener('pwa-installed',onInstalled);
-    window.addEventListener('sw-update-available',onUpdate);
-    return()=>{
-      window.removeEventListener('pwa-installable',onInstallable);
-      window.removeEventListener('pwa-installed',onInstalled);
-      window.removeEventListener('sw-update-available',onUpdate);
-    };
-  },[]);
-
-  const install=async()=>{
-    if(!window._deferredInstall)return;
-    window._deferredInstall.prompt();
-    const{outcome}=await window._deferredInstall.userChoice;
-    if(outcome==='accepted'){window._deferredInstall=null;setShow(false);}
+  const txJour = (j)=>{
+    const d = String(ann)+"-"+String(mo+1).padStart(2,"0")+"-"+String(j).padStart(2,"0");
+    const occ = reservations.filter(r=>!r.cancelled && r.checkin<=d && r.checkout>d).length;
+    return Math.min(100, Math.round(occ/totalActives*100));
   };
-  const reload=()=>{
-    if(navigator.serviceWorker.controller)
-      navigator.serviceWorker.controller.postMessage('SKIP_WAITING');
-    setTimeout(()=>window.location.reload(),300);
-  };
+  const coulTx = tx => tx>=80?T.red:tx>=50?T.orange:tx>=20?T.green:T.mute;
+  const moisNoms=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
-  if(updateReady) return(
-    <div style={{position:'fixed',bottom:70,left:12,right:12,zIndex:8000,background:T.blue,borderRadius:14,padding:'11px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,boxShadow:'0 4px 20px rgba(0,0,0,.5)'}}>
-      <span style={{fontSize:13,fontWeight:600,color:'#fff'}}>🔄 Mise à jour disponible</span>
-      <div style={{display:'flex',gap:6}}>
-        <button onClick={()=>setUpdateReady(false)} style={{background:'rgba(255,255,255,.15)',border:'none',borderRadius:8,padding:'5px 10px',color:'#fff',fontSize:11}}>Plus tard</button>
-        <button onClick={reload} style={{background:'#fff',border:'none',borderRadius:8,padding:'5px 12px',color:T.blue,fontWeight:700,fontSize:11}}>Mettre à jour</button>
+  return (
+    <div style={{background:T.surface,borderRadius:16,padding:14,marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <button onClick={()=>setMois(new Date(ann,mo-1,1))} style={{background:T.sur2,border:"none",borderRadius:8,padding:"4px 10px",color:T.text,fontWeight:700}}>‹</button>
+        <div style={{fontWeight:800,fontSize:13}}>{moisNoms[mo]} {ann}</div>
+        <button onClick={()=>setMois(new Date(ann,mo+1,1))} style={{background:T.sur2,border:"none",borderRadius:8,padding:"4px 10px",color:T.text,fontWeight:700}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:4}}>
+        {["Lu","Ma","Me","Je","Ve","Sa","Di"].map(d=><div key={d} style={{textAlign:"center",fontSize:9,color:T.mute,fontWeight:700}}>{d}</div>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+        {Array(premier).fill(null).map((_,i)=><div key={"e"+i}/>)}
+        {jours.map(j=>{
+          const tx=txJour(j);const col=coulTx(tx);const isToday=new Date().getDate()===j&&new Date().getMonth()===mo&&new Date().getFullYear()===ann;
+          return(<div key={j} style={{background:tx>0?col+"22":T.sur2,border:`1px solid ${isToday?T.accent:T.border}`,borderRadius:6,padding:"4px 2px",textAlign:"center",cursor:"default"}}>
+            <div style={{fontSize:9,fontWeight:isToday?800:500,color:isToday?T.accent:T.text}}>{j}</div>
+            {tx>0&&<div style={{fontSize:8,color:col,fontWeight:700}}>{tx}%</div>}
+          </div>);
+        })}
+      </div>
+      <div style={{display:"flex",gap:10,marginTop:8,justifyContent:"center"}}>
+        {[[T.green,"<50%"],[T.orange,"50-79%"],[T.red,"≥80%"]].map(([c,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{fontSize:9,color:T.mute}}>{l}</span></div>
+        ))}
       </div>
     </div>
   );
+}
 
-  if(!show) return null;
+/* ═══════════════════════════════════════════════
+   FONCTIONNALITE 2 : MOTEUR DE RECHERCHE GLOBAL
+   Recherche en temps réel dans chambres + réservations + clients
+═══════════════════════════════════════════════ */
+function RechercheGlobale({T, rooms, reservations, clients, services, onClose, onNav}){
+  const [q,setQ]=React.useState("");const inputRef=React.useRef(null);
+  React.useEffect(()=>{setTimeout(()=>inputRef.current?.focus(),80);},[]);
+  const ql=q.trim().toLowerCase();
+  if(!ql) return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:5000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"60px 16px 16px"}}>
+      <div style={{width:"100%",maxWidth:560,background:T.surface,borderRadius:20,padding:16,border:`1px solid ${T.border}`}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+          <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Rechercher chambre, client, réservation..." style={{flex:1,background:T.inp,border:`1px solid ${T.accent}`,borderRadius:10,padding:"11px 14px",color:T.text,fontSize:13}}/>
+          <button onClick={onClose} style={{background:T.rB.bg,border:"none",borderRadius:8,padding:"8px 12px",color:T.red,fontWeight:700}}>✕</button>
+        </div>
+        <div style={{fontSize:11,color:T.mute,textAlign:"center",padding:20}}>Tapez pour rechercher…</div>
+      </div>
+    </div>
+  );
+  const resRes=reservations.filter(r=>(r.clientName||"").toLowerCase().includes(ql)||(r.roomNum||"").includes(ql)||(r.clientPhone||"").includes(ql)||(r.clientNID||"").includes(ql)).slice(0,5);
+  const resRooms=rooms.filter(r=>(r.num||"").includes(ql)||(r.type||"").toLowerCase().includes(ql)).slice(0,4);
+  const resCli=clients.filter(c=>(c.name||"").toLowerCase().includes(ql)||(c.phone||"").includes(ql)).slice(0,4);
+  const total=resRes.length+resRooms.length+resCli.length;
   return(
-    <div style={{position:'fixed',bottom:70,left:12,right:12,zIndex:8000,background:T.surface,borderRadius:14,padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,border:`1px solid ${T.border}`,boxShadow:'0 4px 24px rgba(0,0,0,.5)'}}>
-      <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <img src="icon-72.png" alt="" style={{width:36,height:36,borderRadius:8}}/>
-        <div>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Installer Hotel Pro</div>
-          <div style={{fontSize:10,color:T.mute}}>Accès rapide depuis votre écran d'accueil</div>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:5000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"60px 16px 16px"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{width:"100%",maxWidth:560,background:T.surface,borderRadius:20,padding:16,border:`1px solid ${T.border}`,maxHeight:"75dvh",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+          <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Rechercher..." style={{flex:1,background:T.inp,border:`1px solid ${T.accent}`,borderRadius:10,padding:"11px 14px",color:T.text,fontSize:13}}/>
+          <button onClick={onClose} style={{background:T.rB.bg,border:"none",borderRadius:8,padding:"8px 12px",color:T.red,fontWeight:700}}>✕</button>
+        </div>
+        <div style={{overflowY:"auto",flex:1}}>
+          {total===0&&<div style={{textAlign:"center",padding:24,color:T.mute}}>Aucun résultat pour « {q} »</div>}
+          {resRooms.length>0&&<><div style={{fontSize:10,color:T.mute,fontWeight:700,letterSpacing:1,marginBottom:5,padding:"4px 0"}}>CHAMBRES</div>
+            {resRooms.map(r=><div key={r.id} onClick={()=>{onNav("chambres");onClose();}} style={{display:"flex",justifyContent:"space-between",background:T.sur2,borderRadius:10,padding:"8px 12px",marginBottom:4,cursor:"pointer"}}><span style={{fontWeight:700}}>#{r.num} — {r.type}</span><span style={{color:T.accent,fontSize:12}}>{fmtF(r.price)}/nuit</span></div>)}
+          </>}
+          {resRes.length>0&&<><div style={{fontSize:10,color:T.mute,fontWeight:700,letterSpacing:1,marginBottom:5,marginTop:8,padding:"4px 0"}}>RÉSERVATIONS</div>
+            {resRes.map(r=><div key={r.id} onClick={()=>{onNav("reservations");onClose();}} style={{display:"flex",justifyContent:"space-between",background:T.sur2,borderRadius:10,padding:"8px 12px",marginBottom:4,cursor:"pointer"}}><div><div style={{fontWeight:700,fontSize:12}}>{r.clientName}</div><div style={{fontSize:10,color:T.sub}}>Ch.{r.roomNum} · {r.checkin} → {r.checkout}</div></div><span style={{color:T.accent,fontSize:12,fontWeight:700}}>{fmtF(r.paid||r.roomTotal||0)}</span></div>)}
+          </>}
+          {resCli.length>0&&<><div style={{fontSize:10,color:T.mute,fontWeight:700,letterSpacing:1,marginBottom:5,marginTop:8,padding:"4px 0"}}>CLIENTS</div>
+            {resCli.map(c=><div key={c.id} onClick={()=>{onNav("clients_admin");onClose();}} style={{display:"flex",justifyContent:"space-between",background:T.sur2,borderRadius:10,padding:"8px 12px",marginBottom:4,cursor:"pointer"}}><span style={{fontWeight:700}}>{c.vip?"⭐ ":""}{c.name}</span><span style={{fontSize:11,color:T.sub}}>{c.phone}</span></div>)}
+          </>}
         </div>
       </div>
-      <div style={{display:'flex',gap:6,flexShrink:0}}>
-        <button onClick={()=>setShow(false)} style={{background:T.sur2,border:'none',borderRadius:8,padding:'6px 10px',color:T.sub,fontSize:11}}>Non merci</button>
-        <button onClick={install} style={{background:T.accent,border:'none',borderRadius:8,padding:'6px 12px',color:T.bg,fontWeight:700,fontSize:11}}>📲 Installer</button>
-      </div>
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════
-   FIREBASE CONFIG MODAL
+   FONCTIONNALITE 3 : TABLEAU DE BORD AMÉLIORÉ
+   Avec CalendrierOccupation intégré + alertes check-in/out
 ═══════════════════════════════════════════════ */
-function FBConfigModal({T,onClose,onSaved,flash}){
-  const cur=loadFBConfig()||FB_DEFAULT;
-  const [raw,setRaw]=useState(JSON.stringify(cur,null,2));
-  const [err,setErr]=useState("");const [ok,setOk]=useState(false);const [testing,setTesting]=useState(false);
-  const testAndSave=async()=>{
-    setErr("");setOk(false);setTesting(true);
-    const cfg=parseFBConfig(raw);
-    if(!cfg||!cfg.projectId||!cfg.apiKey){setErr("Configuration invalide — verifiez le JSON");setTesting(false);return;}
-    const success=initFirebase(cfg);
-    if(!success){setErr("Echec initialisation Firebase");setTesting(false);return;}
-    /* test connexion */
-    try{
-      await Promise.race([db.collection("_ping").doc("test").get(),new Promise((_,r)=>setTimeout(()=>r(new Error("Timeout")),6000))]);
-      saveFBConfig(cfg);setOk(true);flash&&flash("Firebase connecte : "+cfg.projectId);
-      setTimeout(()=>{onSaved&&onSaved();onClose();},800);
-    }catch(e){
-      /* erreur permission = connexion OK mais pas d acces lecture (normal) */
-      if(e.code==="permission-denied"||e.message?.includes("permission")||e.message?.includes("Missing")){
-        saveFBConfig(cfg);setOk(true);
-        setTimeout(()=>{onSaved&&onSaved();onClose();},800);
-      } else {
-        setErr("Connexion echouee : "+(e.message||e.code||"verifiez projectId et apiKey"));
-        initFirebase(); /* restaurer config precedente */
-      }
-    }
-    setTesting(false);
-  };
-  const reset=()=>{localStorage.removeItem("hotel_fb_config");initFirebase();setRaw(JSON.stringify(FB_DEFAULT,null,2));setErr("");setOk(false);};
-  const cur2=loadFBConfig()||FB_DEFAULT;
-  return(<Modal T={T} title="🔥 Configuration Firebase" onClose={onClose} wide>
-    <div style={{background:T.sur2,borderRadius:12,padding:12,marginBottom:12,fontSize:11}}>
-      <div style={{fontWeight:700,color:T.blue,marginBottom:4}}>Projet actuel : <span style={{color:T.accent}}>{cur2.projectId}</span></div>
-      <div style={{color:T.mute}}>Collez ici la config Firebase de votre projet (JSON ou format console Firebase).</div>
-    </div>
-    {/* Instructions */}
-    <div style={{background:T.sur2,borderRadius:10,padding:10,marginBottom:12,fontSize:10,color:T.sub,lineHeight:1.6}}>
-      <b style={{color:T.text}}>Comment obtenir la config :</b><br/>
-      1. Firebase Console → votre projet → ⚙️ Parametres<br/>
-      2. Section "Vos applications" → Web → objet <code>firebaseConfig</code><br/>
-      3. Copiez tout l'objet JSON et collez ci-dessous
-    </div>
-    <div style={{marginBottom:10}}>
-      <div style={{fontSize:11,color:T.mute,marginBottom:4,fontWeight:600}}>Config Firebase (JSON)</div>
-      <textarea value={raw} onChange={e=>setRaw(e.target.value)} rows={10} style={{width:"100%",background:T.inp,border:`1px solid ${err?T.red:ok?T.green:T.inpB}`,borderRadius:10,padding:"10px 12px",color:T.text,fontSize:11,fontFamily:"monospace",resize:"vertical"}}/>
-    </div>
-    {err&&<div style={{background:T.rB.bg,border:`1px solid ${T.rB.bd}`,borderRadius:10,padding:"9px 12px",color:T.red,fontSize:12,fontWeight:600,marginBottom:10}}>❌ {err}</div>}
-    {ok&&<div style={{background:T.gB.bg,border:`1px solid ${T.gB.bd}`,borderRadius:10,padding:"9px 12px",color:T.green,fontSize:12,fontWeight:600,marginBottom:10}}>✅ Connexion reussie !</div>}
-    <div style={{background:T.sur2,borderRadius:10,padding:10,marginBottom:12}}>
-      <div style={{fontSize:10,color:T.mute,fontWeight:700,marginBottom:6}}>📋 REGLES FIRESTORE A APPLIQUER</div>
-      <pre style={{fontSize:9,color:T.sub,margin:0,whiteSpace:"pre-wrap",lineHeight:1.5}}>{`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /shops/{shopId} {
-      allow read, write: if true;
-      match /{collection}/{docId} {
-        allow read, write: if true;
-      }
-    }
-  }
-}`}</pre>
-      <div style={{fontSize:9,color:T.mute,marginTop:6}}>Firebase Console → Firestore → Regles → Remplacer → Publier</div>
-    </div>
-    <div style={{display:"flex",gap:8}}>
-      <button onClick={reset} style={{flex:1,background:T.sur2,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px",color:T.sub,fontSize:12}}>🔄 Reset defaut</button>
-      <button onClick={testAndSave} disabled={testing} style={{flex:2,background:T.accent,border:"none",borderRadius:10,padding:"10px",color:T.bg,fontWeight:700,fontSize:13,opacity:testing?.6:1}}>{testing?"⏳ Test en cours...":"🔥 Tester & Sauvegarder"}</button>
-    </div>
-  </Modal>);
-}
-
 /* ═══════════════════════════════════════════════
    AUTH + APP ROOT
 ═══════════════════════════════════════════════ */
@@ -1305,8 +1284,7 @@ function App(){
 
   useEffect(()=>{document.documentElement.style.setProperty("--bg",T.bg);localStorage.setItem("hotel_theme",themeName);},[themeName,T]);
 
-  const flashFn=(msg,type="ok")=>{const id=uid();setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),2600);};
-  const [fbModal,setFbModal]=useState(false);
+  const flash=(msg,type="ok")=>{const id=uid();setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),2600);};
   const tripleClick=()=>{const r=clickRef.current;r.n++;clearTimeout(r.t);if(r.n>=3){r.n=0;setDevMode(true);}r.t=setTimeout(()=>r.n=0,500);};
 
   const register=async()=>{
@@ -1350,7 +1328,7 @@ function App(){
     <ToastStack toasts={toasts}/>
   </div>);}
 
-  if(session){return(<>{session.isDev?<DevDashboard T={T} themeName={themeName} setThemeName={setThemeName} logout={logout} flash={flashFn}/>:<MainApp session={session} T={T} themeName={themeName} setThemeName={setThemeName} logout={logout} flash={flashFn}/>}<ToastStack toasts={toasts}/><PWABanner T={T}/></>);}
+  if(session){return(<>{session.isDev?<DevDashboard T={T} themeName={themeName} setThemeName={setThemeName} logout={logout} flash={flash}/>:<MainApp session={session} T={T} themeName={themeName} setThemeName={setThemeName} logout={logout} flash={flash}/>}<ToastStack toasts={toasts}/></>);}
 
   return(<div style={{minHeight:"100dvh",background:T.bg,color:T.text,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
     <div style={{maxWidth:430,width:"100%"}}>
@@ -1358,11 +1336,6 @@ function App(){
         <div style={{fontSize:60,marginBottom:8}}>🏨</div>
         <div style={{fontFamily:"Outfit",fontSize:30,fontWeight:900,color:T.accent,letterSpacing:.5}}>Hotel SaaS Pro</div>
         <div style={{fontSize:10,color:T.mute,marginTop:4}}>Gestion hoteliere complete · Triple-clic = acces developpeur</div>
-      </div>
-      {/* Firebase config indicator */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:T.surface,borderRadius:12,padding:"8px 14px",marginBottom:12,border:`1px solid ${T.border}`}}>
-        <div style={{fontSize:11,color:T.sub}}>🔥 Firebase : <span style={{color:T.accent,fontWeight:700}}>{(loadFBConfig()||FB_DEFAULT).projectId}</span></div>
-        <button onClick={()=>setFbModal(true)} style={{background:T.bB.bg,border:`1px solid ${T.bB.bd}`,borderRadius:8,padding:"4px 10px",color:T.blue,fontSize:11,fontWeight:700}}>⚙️ Configurer</button>
       </div>
       <div style={{background:T.surface,borderRadius:24,padding:22,border:`1px solid ${T.border}`}}>
         <div style={{display:"flex",background:T.sur2,borderRadius:12,padding:3,marginBottom:16,gap:4}}>
@@ -1385,8 +1358,6 @@ function App(){
       </div>
     </div>
     <ToastStack toasts={toasts}/>
-    <PWABanner T={T}/>
-    {fbModal&&<FBConfigModal T={T} onClose={()=>setFbModal(false)} onSaved={()=>setFbModal(false)} flash={flashFn}/>}
   </div>);
 }
 
@@ -1394,3 +1365,4 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
+
