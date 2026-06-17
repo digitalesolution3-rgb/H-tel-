@@ -126,6 +126,30 @@ const SRV_CATS=["Restaurant","Bar","Piscine","Spa/Massage","Pressing","Transport
 const SOURCES=["Direct","Booking.com","Expedia","Airbnb","WhatsApp","Telephone","Agence de voyage","Autre"];
 const AMENITIES_LIST=["Climatisation","TV","WiFi","Minibar","Coffre-fort","Balcon","Baignoire","Jacuzzi","Vue piscine","Vue jardin","Kitchenette","Bureau de travail","Machine a cafe"];
 
+/* ═══ MODES DE LOCATION ═══ */
+const LOCATION_MODES=["Nuit","Journee","Heure"];
+const LOCATION_ICO={Nuit:"🌙",Journee:"☀️",Heure:"⏱️"};
+/* Calcule la durée et le total selon le mode */
+const calcDuree=(mode,checkin,checkout,checkinTime,checkoutTime,prixNuit,prixJour,prixHeure)=>{
+  const rn=parseInt(prixNuit||0),rj=parseInt(prixJour||prixNuit||0),rh=parseInt(prixHeure||0);
+  if(mode==="Heure"){
+    // Si même jour avec heures
+    const ci=new Date(`${checkin||"2000-01-01"}T${checkinTime||"00:00"}`);
+    const co=new Date(`${checkout||checkin||"2000-01-01"}T${checkoutTime||"00:00"}`);
+    const heures=Math.max(1,Math.ceil((co-ci)/3600000));
+    return{heures,jours:0,nuits:0,total:rh*heures,label:`${heures}h`,unite:"h"};
+  }
+  if(mode==="Journee"){
+    const jours=Math.max(1,Math.ceil((parseD(checkout)-parseD(checkin))/86400000));
+    return{heures:0,jours,nuits:0,total:rj*jours,label:`${jours}j`,unite:"j"};
+  }
+  // Nuit (défaut)
+  const nuits=nightsBetween(checkin,checkout);
+  return{heures:0,jours:0,nuits,total:rn*nuits,label:`${nuits}n`,unite:"n"};
+};
+const fmtHeure=ts=>{if(!ts)return"—";return new Date(ts).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});};
+const heureCourante=()=>new Date().toTimeString().slice(0,5);
+
 /* LocalStorage helpers */
 const LS=(hid,k)=>`h_${hid}_${k}`;
 const lsGet=(hid,k)=>{try{const d=localStorage.getItem(LS(hid,k));return d?JSON.parse(d):[];}catch{return[];}};
@@ -189,29 +213,32 @@ function AlertesPanel({T, reservations, rooms}){
 function HistoriqueClient({T, client, reservations, services}){
   const sejours = reservations.filter(r=>!r.cancelled&&(r.clientName||"").toLowerCase().trim()===(client.name||"").toLowerCase().trim());
   const totalCA = sejours.reduce((s,r)=>s+(r.paid||0),0);
-  const totalNuits = sejours.reduce((s,r)=>s+(r.nights||0),0);
+  const totalNuits = sejours.filter(r=>(r.locationMode||"Nuit")==="Nuit").reduce((s,r)=>s+(r.nights||0),0);
+  const totalJours = sejours.filter(r=>r.locationMode==="Journee").reduce((s,r)=>s+(r.jours||0),0);
+  const totalHeures = sejours.filter(r=>r.locationMode==="Heure").reduce((s,r)=>s+(r.heures||0),0);
   const totalSrv = (services||[]).filter(s=>(s.clientName||"").toLowerCase().trim()===(client.name||"").toLowerCase().trim()).reduce((s,r)=>s+(r.amount||0),0);
   const fidel = sejours.length>=3?"⭐ Fidèle":sejours.length>=1?"✅ Connu":"🆕 Nouveau";
   if(sejours.length===0) return(<div style={{fontSize:11,color:T.mute,padding:"8px 0"}}>Aucun séjour enregistré</div>);
   return(
     <div style={{marginTop:8}}>
-      <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-        {[[sejours.length+"","Séjours",T.blue],[totalNuits+"","Nuits",T.teal],[fmtF(totalCA+totalSrv),"CA total",T.accent]].map(([v,l,c])=>(
-          <div key={l} style={{background:T.sur2,borderRadius:10,padding:"6px 12px",textAlign:"center",flex:"1 1 80px"}}>
-            <div style={{fontWeight:800,color:c,fontSize:14}}>{v}</div>
+      <div style={{fontSize:10,color:T.accent,fontWeight:700,marginBottom:6}}>{fidel}</div>
+      {/* FN6 — Stats par mode */}
+      <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+        {[[sejours.length+"","Séjours",T.blue],[totalNuits+"n","Nuits",T.teal],[totalJours>0?totalJours+"j":null,"Journées",T.orange],[totalHeures>0?totalHeures+"h":null,"Heures",T.purple],[fmtF(totalCA+totalSrv),"CA total",T.accent]].filter(([v])=>v).map(([v,l,c])=>(
+          <div key={l} style={{background:T.sur2,borderRadius:10,padding:"6px 10px",textAlign:"center",flex:"1 1 70px"}}>
+            <div style={{fontWeight:800,color:c,fontSize:13}}>{v}</div>
             <div style={{fontSize:9,color:T.mute}}>{l}</div>
           </div>
         ))}
       </div>
-      <div style={{fontSize:10,color:T.accent,fontWeight:700,marginBottom:6}}>{fidel}</div>
       <div style={{fontSize:11,color:T.mute,fontWeight:600,marginBottom:4}}>Séjours précédents</div>
       {sejours.sort((a,b)=>b.checkin.localeCompare(a.checkin)).slice(0,5).map(r=>(
         <div key={r.id} style={{background:T.sur2,borderRadius:8,padding:"7px 10px",marginBottom:4,fontSize:11}}>
           <div style={{display:"flex",justifyContent:"space-between"}}>
-            <span>Ch.{r.roomNum} · {r.checkin} → {r.checkout}</span>
+            <span>Ch.{r.roomNum} {LOCATION_ICO[r.locationMode||"Nuit"]} {r.dureLabel||`${r.nights||1}n`} — {r.checkin}{r.checkinTime?` ${r.checkinTime}`:""}</span>
             <span style={{fontWeight:700,color:T.accent}}>{fmtF(r.paid||0)}</span>
           </div>
-          <div style={{fontSize:10,color:T.sub,marginTop:2}}>{r.nights}n · {r.payMethod} · {r.source}</div>
+          <div style={{fontSize:10,color:T.sub,marginTop:2}}>{r.locationMode||"Nuit"} · {r.payMethod} · {r.source}</div>
         </div>
       ))}
     </div>
@@ -493,16 +520,51 @@ function Chambres({T,rooms,setRooms,reservations,hid,flash}){
     setRooms(updated);lsSet(hid,"rooms",updated);await fsSet(hid,"rooms",id,room);
     flash(d.id?"Chambre modifiee !":"Chambre ajoutee !");setForm(null);
   };
+  /* FN9 — Check-out rapide depuis carte chambre */
+  const doCheckoutFromRoom=async r=>{
+    if(!r||r.checkedOut)return;
+    if(!confirm(`Check-out de ${r.clientName} (Ch.${r.roomNum}) ?`))return;
+    const u=reservations.map(x=>x.id===r.id?{...x,checkedOut:true,checkoutAt:Date.now()}:x);
+    const setReservations=window.__setReservations;
+    if(setReservations)setReservations(u);
+    lsSet(hid,"reservations",u);await fsUpd(hid,"reservations",r.id,{checkedOut:true,checkoutAt:Date.now()});
+    const newRooms=rooms.map(rm=>rm.id===r.roomId?{...rm,status:"nettoyage"}:rm);
+    setRooms(newRooms);lsSet(hid,"rooms",newRooms);await fsUpd(hid,"rooms",r.roomId,{status:"nettoyage"});
+    flash(`Depart de ${r.clientName} — chambre en nettoyage`);
+  };
+  /* FN10 — Chronometre temps ecoulé temps réel */
+  const Chronometre=({T,res,onCheckout})=>{
+    const [elapsed,setElapsed]=useState("");
+    useEffect(()=>{
+      const tick=()=>{
+        const ci=res.checkinAt||parseD(res.checkin);
+        if(!ci){setElapsed("");return;}
+        const diff=Date.now()-ci;
+        const h=Math.floor(diff/3600000),m=Math.floor((diff%3600000)/60000);
+        const mode=res.locationMode||"Nuit";
+        if(mode==="Heure")setElapsed(`⏱️ ${h}h${String(m).padStart(2,"0")}`);
+        else if(mode==="Journee")setElapsed(`☀️ ${Math.floor(diff/86400000)}j`);
+        else setElapsed(`🌙 ${Math.floor(diff/86400000)}n`);
+      };
+      tick();const iv=setInterval(tick,60000);return()=>clearInterval(iv);
+    },[res]);
+    if(!elapsed)return null;
+    return(<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:3}}>
+      <span style={{fontSize:9,color:T.teal,fontWeight:700}}>{elapsed}</span>
+      <button onClick={e=>{e.stopPropagation();onCheckout(res);}} style={{background:T.oB.bg,border:`1px solid ${T.oB.bd}`,borderRadius:5,padding:"1px 6px",fontSize:8,color:T.orange,fontWeight:700}}>OUT</button>
+    </div>);
+  };
   const delRoom=async r=>{if(!confirm(`Supprimer chambre ${r.num} ?`))return;const u=rooms.filter(x=>x.id!==r.id);setRooms(u);lsSet(hid,"rooms",u);await fsDel(hid,"rooms",r.id);flash("Chambre supprimee");};
   const setStatus=async(r,s)=>{const u=rooms.map(x=>x.id===r.id?{...x,status:s}:x);setRooms(u);lsSet(hid,"rooms",u);await fsUpd(hid,"rooms",r.id,{status:s});flash(`Ch.${r.num} → ${s}`);};
 
   const RoomForm=({init,onDone,onClose})=>{
-    const [f,setF]=useState(init||{num:"",type:"Double",price:"",floor:"1",beds:"2",maxGuests:"2",area:"",amenities:[],status:"libre",notes:""});
+    const [f,setF]=useState(init||{num:"",type:"Double",price:"",priceDay:"",priceHour:"",floor:"1",beds:"2",maxGuests:"2",area:"",amenities:[],status:"libre",notes:""});
     const toggle=a=>setF(p=>({...p,amenities:(p.amenities||[]).includes(a)?(p.amenities||[]).filter(x=>x!==a):[...(p.amenities||[]),a]}));
     return(<Modal T={T} title={f.id?"✏️ Modifier chambre":"➕ Nouvelle chambre"} onClose={onClose}>
       <G2><Field T={T} label="N° chambre" value={f.num} onChange={v=>setF(p=>({...p,num:v}))} req/><Field T={T} label="Etage" value={f.floor} onChange={v=>setF(p=>({...p,floor:v}))}/></G2>
       <SelField T={T} label="Type" value={f.type} onChange={v=>setF(p=>({...p,type:v}))} opts={ROOM_TYPES}/>
-      <Field T={T} label="Prix par nuit (F CFA)" value={f.price} onChange={v=>setF(p=>({...p,price:v.replace(/\D/g,"")}))} req/>
+      <div style={{fontSize:11,color:T.teal,fontWeight:700,letterSpacing:.5,marginBottom:4}}>● TARIFS</div>
+      <G3><Field T={T} label="Prix/nuit (F)" value={f.price} onChange={v=>setF(p=>({...p,price:v.replace(/\D/g,"")}))} req/><Field T={T} label="Prix/jour (F)" value={f.priceDay||""} onChange={v=>setF(p=>({...p,priceDay:v.replace(/\D/g,"")}))} ph="Facultatif"/><Field T={T} label="Prix/heure (F)" value={f.priceHour||""} onChange={v=>setF(p=>({...p,priceHour:v.replace(/\D/g,"")}))} ph="Facultatif"/></G3>
       <G2><Field T={T} label="Lits" value={f.beds} onChange={v=>setF(p=>({...p,beds:v.replace(/\D/g,"")}))} /><Field T={T} label="Personnes max" value={f.maxGuests} onChange={v=>setF(p=>({...p,maxGuests:v.replace(/\D/g,"")}))}/></G2>
       <Field T={T} label="Superficie (m²)" value={f.area} onChange={v=>setF(p=>({...p,area:v}))}/>
       <SelField T={T} label="Statut" value={f.status} onChange={v=>setF(p=>({...p,status:v}))} opts={Object.values(ROOM_STATUS)}/>
@@ -530,7 +592,7 @@ function Chambres({T,rooms,setRooms,reservations,hid,flash}){
           <span style={{padding:"3px 12px",background:`${col}22`,color:col,borderRadius:20,fontSize:12,fontWeight:700}}>{STATUS_ICO(room.status)} {room.status}</span>
         </div>
         <G2 gap={8}>
-          {[["Type",room.type],["Etage",room.floor],["Lits",room.beds],["Max pers.",room.maxGuests],["Prix/nuit",fmtF(room.price)],["Superficie",room.area?(room.area+"m²"):"—"]].map(([k,v])=><div key={k}><div style={{fontSize:10,color:T.mute,fontWeight:600}}>{k}</div><div style={{fontWeight:700,marginTop:2,fontSize:13}}>{v}</div></div>)}
+          {[["Type",room.type],["Etage",room.floor],["Lits",room.beds],["Max pers.",room.maxGuests],["Prix/nuit",fmtF(room.price)],["Prix/jour",room.priceDay?fmtF(room.priceDay):"—"],["Prix/heure",room.priceHour?fmtF(room.priceHour):"—"],["Superficie",room.area?(room.area+"m²"):"—"]].map(([k,v])=><div key={k}><div style={{fontSize:10,color:T.mute,fontWeight:600}}>{k}</div><div style={{fontWeight:700,marginTop:2,fontSize:13}}>{v}</div></div>)}
         </G2>
         {(room.amenities||[]).length>0&&(<div style={{marginTop:10}}>
           <div style={{fontSize:10,color:T.mute,marginBottom:5,fontWeight:600}}>Equipements</div>
@@ -570,8 +632,11 @@ function Chambres({T,rooms,setRooms,reservations,hid,flash}){
           </div>
           <div style={{fontSize:11,fontWeight:700,color:col,marginBottom:2}}>{room.status}</div>
           <div style={{fontSize:10,color:T.sub}}>{room.type} · {room.floor}F</div>
-          <div style={{fontSize:12,color:T.accent,marginTop:5,fontWeight:700}}>{fmtF(room.price)}<span style={{fontSize:9,color:T.mute}}>/nuit</span></div>
-          {res&&<div style={{fontSize:9,color:T.blue,marginTop:4,borderTop:`1px solid ${T.border}`,paddingTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {res.clientName?.split(" ")[0]} → {res.checkout}</div>}
+          <div style={{fontSize:12,color:T.accent,marginTop:5,fontWeight:700}}>{fmtF(room.price)}<span style={{fontSize:9,color:T.mute}}>/nuit</span>
+            {room.priceHour?<span style={{fontSize:8,color:T.mute,marginLeft:4}}>{fmtF(room.priceHour)}/h</span>:null}
+          </div>
+          {res&&<><div style={{fontSize:9,color:T.blue,marginTop:4,borderTop:`1px solid ${T.border}`,paddingTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {res.clientName?.split(" ")[0]} → {res.checkout} <span style={{color:LOCATION_ICO[res.locationMode]?T.teal:T.mute}}>{LOCATION_ICO[res.locationMode||"Nuit"]}{res.dureLabel||""}</span></div>
+          <Chronometre T={T} res={res} onCheckout={r=>{doCheckoutFromRoom(r);}}/></>}
           {(room.amenities||[]).length>0&&<div style={{fontSize:8,color:T.mute,marginTop:3}}>{room.amenities.slice(0,2).join(" · ")}{room.amenities.length>2?` +${room.amenities.length-2}`:""}</div>}
         </div>);
       })}
@@ -585,19 +650,23 @@ function Chambres({T,rooms,setRooms,reservations,hid,flash}){
    RÉSERVATIONS
 ═══════════════════════════════════════════════ */
 function Reservations({T,rooms,reservations,setReservations,hid,flash,addService,hotelName,hotelPhone,hotelAddress,useBLE,setUseBLE}){
-  const [tab,setTab]=useState("current");const [modal,setModal]=useState(null);const [form,setForm]=useState(null);const [q,setQ]=useState("");
+  const [tab,setTab]=useState("current");const [modal,setModal]=useState(null);const [form,setForm]=useState(null);const [q,setQ]=useState("");const [modeFilter,setModeFilter]=useState("all");
   const today=dKey(Date.now());
   const tabs={
-    current:reservations.filter(r=>!r.cancelled&&r.checkin<=today&&r.checkout>today),
+    current:reservations.filter(r=>!r.cancelled&&r.checkin<=today&&(r.checkout>today||(r.locationMode==="Heure"&&r.checkin===today))),
     upcoming:reservations.filter(r=>!r.cancelled&&r.checkin>today),
-    past:reservations.filter(r=>!r.cancelled&&r.checkout<=today),
+    past:reservations.filter(r=>!r.cancelled&&r.checkout<=today&&r.locationMode!=="Heure"),
     cancelled:reservations.filter(r=>r.cancelled),
   };
-  const shown=tabs[tab].filter(r=>(r.clientName||"").toLowerCase().includes(q.toLowerCase())||(r.roomNum||"").includes(q)||(r.clientPhone||"").includes(q));
+  /* FN7 — Filtre par mode location */
+  const shownBase=tabs[tab].filter(r=>(r.clientName||"").toLowerCase().includes(q.toLowerCase())||(r.roomNum||"").includes(q)||(r.clientPhone||"").includes(q));
+  const shown=modeFilter==="all"?shownBase:shownBase.filter(r=>(r.locationMode||"Nuit")===modeFilter);
 
   const saveRes=async d=>{
-    const id=d.id||uid();const n=nightsBetween(d.checkin,d.checkout);const rp=parseInt(d.roomPrice||0);
-    const rec={...d,id,nights:n,roomTotal:rp*n,paid:d.paid!==undefined?Number(d.paid):rp*n,createdAt:d.createdAt||Date.now()};
+    const id=d.id||uid();
+    const mode=d.locationMode||"Nuit";
+    const dur=calcDuree(mode,d.checkin,d.checkout,d.checkinTime,d.checkoutTime,d.roomPrice,d.roomPriceDay,d.roomPriceHour);
+    const rec={...d,id,nights:dur.nuits,heures:dur.heures,jours:dur.jours,dureLabel:dur.label,roomTotal:dur.total,paid:d.paid!==undefined?Number(d.paid):dur.total,checkinAt:d.checkinAt||Date.now(),createdAt:d.createdAt||Date.now()};
     const updated=d.id?reservations.map(r=>r.id===id?rec:r):[...reservations,rec];
     setReservations(updated);lsSet(hid,"reservations",updated);await fsSet(hid,"reservations",id,rec);
     flash(d.id?"Reservation modifiee !":"Reservation creee !");setForm(null);
@@ -618,21 +687,52 @@ function Reservations({T,rooms,reservations,setReservations,hid,flash,addService
   };
 
   const ResForm=({init,onDone,onClose})=>{
-    const [f,setF]=useState(init||{clientName:"",clientPhone:"",clientEmail:"",clientNID:"",nationality:"Burkinabe",roomId:"",roomNum:"",roomType:"",roomPrice:"",checkin:today,checkout:"",adults:"1",children:"0",payMethod:"Especes",paid:"",deposit:"",notes:"",source:"Direct"});
-    const n=f.checkin&&f.checkout?nightsBetween(f.checkin,f.checkout):0;
-    const rp=parseInt(f.roomPrice||0);const total=rp*n;
-    const pickRoom=id=>{const r=rooms.find(rm=>rm.id===id);if(r)setF(p=>({...p,roomId:id,roomNum:r.num,roomType:r.type,roomPrice:String(r.price)}));};
+    const [f,setF]=useState(init||{clientName:"",clientPhone:"",clientEmail:"",clientNID:"",nationality:"Burkinabe",roomId:"",roomNum:"",roomType:"",roomPrice:"",roomPriceDay:"",roomPriceHour:"",locationMode:"Nuit",checkin:today,checkout:"",checkinTime:heureCourante(),checkoutTime:"",adults:"1",children:"0",payMethod:"Especes",paid:"",deposit:"",notes:"",source:"Direct"});
+    const mode=f.locationMode||"Nuit";
+    const dur=mode==="Heure"&&f.checkin&&f.checkinTime&&f.checkoutTime
+      ?calcDuree(mode,f.checkin,f.checkin,f.checkinTime,f.checkoutTime,f.roomPrice,f.roomPriceDay,f.roomPriceHour)
+      :f.checkin&&f.checkout
+      ?calcDuree(mode,f.checkin,f.checkout,f.checkinTime,f.checkoutTime,f.roomPrice,f.roomPriceDay,f.roomPriceHour)
+      :{total:0,label:""};
+    const total=dur.total;
+    const pickRoom=id=>{const r=rooms.find(rm=>rm.id===id);if(r)setF(p=>({...p,roomId:id,roomNum:r.num,roomType:r.type,roomPrice:String(r.price),roomPriceDay:String(r.priceDay||r.price),roomPriceHour:String(r.priceHour||"")}));};
     const availRooms=rooms.filter(r=>r.status==="libre"||r.status==="reservee"||r.id===f.roomId);
     return(<Modal T={T} title={f.id?"✏️ Modifier reservation":"📅 Nouvelle reservation"} onClose={onClose} wide>
       <div style={{fontSize:11,color:T.teal,fontWeight:700,letterSpacing:.5,marginBottom:8}}>● CLIENT</div>
       <G2><Field T={T} label="Nom complet" value={f.clientName} onChange={v=>setF(p=>({...p,clientName:v}))} req/><Field T={T} label="Telephone" value={f.clientPhone} onChange={v=>setF(p=>({...p,clientPhone:v}))}/></G2>
       <G2><Field T={T} label="Email" value={f.clientEmail||""} onChange={v=>setF(p=>({...p,clientEmail:v}))}/><Field T={T} label="N° Piece identite" value={f.clientNID||""} onChange={v=>setF(p=>({...p,clientNID:v}))}/></G2>
       <Field T={T} label="Nationalite" value={f.nationality||""} onChange={v=>setF(p=>({...p,nationality:v}))}/>
-      <div style={{fontSize:11,color:T.teal,fontWeight:700,letterSpacing:.5,marginTop:4,marginBottom:8}}>● CHAMBRE & SEJOUR</div>
-      <SelField T={T} label="Chambre" value={f.roomId} onChange={pickRoom} opts={[{v:"",l:"-- Choisir chambre --"},...availRooms.map(r=>({v:r.id,l:`Ch.${r.num} — ${r.type} (${fmtF(r.price)}/nuit)`}))]}/>
-      <G2><Field T={T} label="Date arrivee" type="date" value={f.checkin} onChange={v=>setF(p=>({...p,checkin:v}))} req/><Field T={T} label="Date depart" type="date" value={f.checkout} onChange={v=>setF(p=>({...p,checkout:v}))} req/></G2>
-      {n>0&&<div style={{background:T.sur2,borderRadius:10,padding:10,marginBottom:10,fontSize:12,display:"flex",gap:16}}>
-        <span>🌙 <b>{n} nuit{n>1?"s":""}</b></span><span style={{color:T.mute}}>|</span><span>💰 Total chambre : <b style={{color:T.accent}}>{fmtF(total)}</b></span>
+      <div style={{fontSize:11,color:T.teal,fontWeight:700,letterSpacing:.5,marginTop:4,marginBottom:8}}>● CHAMBRE & MODE</div>
+      <SelField T={T} label="Chambre" value={f.roomId} onChange={pickRoom} opts={[{v:"",l:"-- Choisir chambre --"},...availRooms.map(r=>({v:r.id,l:`Ch.${r.num} — ${r.type} (${fmtF(r.price)}/nuit${r.priceHour?` · ${fmtF(r.priceHour)}/h`:""})`}))]}/>
+      {/* FN1 — Sélecteur mode location */}
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:11,color:T.mute,marginBottom:5,fontWeight:600}}>Mode de location</div>
+        <div style={{display:"flex",gap:4}}>
+          {LOCATION_MODES.map(m=><button key={m} onClick={()=>setF(p=>({...p,locationMode:m}))} style={{flex:1,background:mode===m?T.accent:T.sur2,border:`1px solid ${mode===m?T.accent:T.border}`,borderRadius:8,padding:"7px 4px",fontSize:11,fontWeight:700,color:mode===m?T.bg:T.text}}>{LOCATION_ICO[m]} {m}</button>)}
+        </div>
+      </div>
+      {/* FN3 — Champs date/heure selon mode */}
+      {mode==="Heure"?(<>
+        <Field T={T} label="Date" type="date" value={f.checkin} onChange={v=>setF(p=>({...p,checkin:v}))} req/>
+        <G2>
+          <Field T={T} label="Heure arrivee" type="time" value={f.checkinTime||""} onChange={v=>setF(p=>({...p,checkinTime:v}))} req/>
+          <Field T={T} label="Heure depart" type="time" value={f.checkoutTime||""} onChange={v=>setF(p=>({...p,checkoutTime:v}))} req/>
+        </G2>
+      </>):(<>
+        <G2>
+          <Field T={T} label="Date arrivee" type="date" value={f.checkin} onChange={v=>setF(p=>({...p,checkin:v}))} req/>
+          <Field T={T} label="Date depart" type="date" value={f.checkout} onChange={v=>setF(p=>({...p,checkout:v}))} req/>
+        </G2>
+        {mode==="Nuit"&&<G2>
+          <Field T={T} label="Heure arrivee" type="time" value={f.checkinTime||""} onChange={v=>setF(p=>({...p,checkinTime:v}))}/>
+          <Field T={T} label="Heure depart" type="time" value={f.checkoutTime||""} onChange={v=>setF(p=>({...p,checkoutTime:v}))}/>
+        </G2>}
+      </>)}
+      {/* FN4 — Affichage durée + montant calculé */}
+      {dur.label&&<div style={{background:T.sur2,borderRadius:10,padding:10,marginBottom:10,fontSize:12,display:"flex",gap:16,flexWrap:"wrap"}}>
+        <span>{LOCATION_ICO[mode]} <b>{dur.label}</b></span>
+        <span style={{color:T.mute}}>|</span>
+        <span>💰 Total : <b style={{color:T.accent}}>{fmtF(total)}</b></span>
       </div>}
       <G2><Field T={T} label="Adultes" value={f.adults} onChange={v=>setF(p=>({...p,adults:v.replace(/\D/g,"")}))} /><Field T={T} label="Enfants" value={f.children} onChange={v=>setF(p=>({...p,children:v.replace(/\D/g,"")}))}/></G2>
       <div style={{fontSize:11,color:T.teal,fontWeight:700,letterSpacing:.5,marginTop:4,marginBottom:8}}>● PAIEMENT</div>
@@ -645,7 +745,7 @@ function Reservations({T,rooms,reservations,setReservations,hid,flash,addService
       <Field T={T} label="Notes" value={f.notes||""} onChange={v=>setF(p=>({...p,notes:v}))}/>
       <div style={{display:"flex",gap:8,marginTop:8}}>
         <button onClick={onClose} style={{flex:1,background:T.sur2,border:"none",borderRadius:10,padding:11,color:T.text}}>Annuler</button>
-        <button onClick={()=>onDone({...f,paid:f.paid!==undefined&&f.paid!==""?parseInt(f.paid):total})} style={{flex:2,background:T.accent,border:"none",borderRadius:10,padding:11,color:T.bg,fontWeight:700}}>Enregistrer</button>
+        <button onClick={()=>onDone({...f,paid:f.paid!==undefined&&f.paid!==""?parseInt(f.paid):total,dureLabel:dur.label,...dur})} style={{flex:2,background:T.accent,border:"none",borderRadius:10,padding:11,color:T.bg,fontWeight:700}}>Enregistrer</button>
       </div>
     </Modal>);
   };
@@ -661,10 +761,13 @@ function Reservations({T,rooms,reservations,setReservations,hid,flash,addService
       <div style={{background:T.sur2,borderRadius:14,padding:14,marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:10}}>
           <div style={{fontWeight:800,fontSize:16}}>{res.clientName}</div>
-          <span style={{background:`${statusCol}22`,color:statusCol,padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700}}>{statusLabel}</span>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <span style={{background:`${T.teal}22`,color:T.teal,padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>{LOCATION_ICO[res.locationMode||"Nuit"]} {res.locationMode||"Nuit"} · {res.dureLabel||`${res.nights||1}n`}</span>
+            <span style={{background:`${statusCol}22`,color:statusCol,padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700}}>{statusLabel}</span>
+          </div>
         </div>
         <G2 gap={6}>
-          {[["📞",res.clientPhone||"—"],["🪪",res.clientNID||"—"],["🌍",res.nationality||"—"],["📧",res.clientEmail||"—"],["🛏️",`Ch.${res.roomNum} (${res.roomType})`],["📅",`${res.checkin} → ${res.checkout}`],["🌙",`${res.nights||1} nuit${(res.nights||1)>1?"s":""}`],["👥",`${res.adults||1}A${res.children>0?` ${res.children}E`:""}`],["💳",res.payMethod||"—"],["🌐",res.source||"Direct"]].map(([i,v])=><div key={i} style={{fontSize:11}}><span style={{marginRight:5}}>{i}</span><b>{v}</b></div>)}
+          {[["📞",res.clientPhone||"—"],["🪪",res.clientNID||"—"],["🌍",res.nationality||"—"],["📧",res.clientEmail||"—"],["🛏️",`Ch.${res.roomNum} (${res.roomType})`],["📅",res.locationMode==="Heure"?`${res.checkin} ${res.checkinTime||""}→${res.checkoutTime||""}`:`${res.checkin} → ${res.checkout}`],["⏱️",res.dureLabel||`${res.nights||1}n`],["👥",`${res.adults||1}A${res.children>0?` ${res.children}E`:""}`],["💳",res.payMethod||"—"],["🌐",res.source||"Direct"]].map(([i,v])=><div key={i} style={{fontSize:11}}><span style={{marginRight:5}}>{i}</span><b>{v}</b></div>)}
         </G2>
         {res.notes&&<div style={{marginTop:8,fontSize:11,color:T.sub,borderTop:`1px solid ${T.border}`,paddingTop:6}}>📝 {res.notes}</div>}
       </div>
@@ -711,7 +814,11 @@ function Reservations({T,rooms,reservations,setReservations,hid,flash,addService
       <button onClick={()=>setForm({})} style={{background:T.accent,border:"none",borderRadius:10,padding:"9px 16px",fontWeight:700,color:T.bg,fontSize:13,flexShrink:0}}>+ Reservation</button>
       <button onClick={()=>setUseBLE(!useBLE)} title={useBLE?"Mode BLE actif":"Mode navigateur actif"} style={{background:useBLE?T.gB.bg:T.sur2,border:`1px solid ${useBLE?T.gB.bd:T.border}`,borderRadius:10,padding:"9px 10px",color:useBLE?T.green:T.sub,fontSize:12,flexShrink:0}}>{useBLE?"🖨️":"🖥️"}</button>
     </div>
-    <input placeholder="🔍 Nom, tél, chambre..." value={q} onChange={e=>setQ(e.target.value)} style={{width:"100%",background:T.inp,border:`1px solid ${T.inpB}`,borderRadius:10,padding:"9px 12px",color:T.text,fontSize:12,marginBottom:10}}/>
+    <input placeholder="🔍 Nom, tél, chambre..." value={q} onChange={e=>setQ(e.target.value)} style={{width:"100%",background:T.inp,border:`1px solid ${T.inpB}`,borderRadius:10,padding:"9px 12px",color:T.text,fontSize:12,marginBottom:8}}/>
+    {/* FN7 — Filtre mode location */}
+    <div style={{display:"flex",gap:4,marginBottom:8,overflowX:"auto"}}>
+      {[["all","Tous"],["Nuit","🌙 Nuit"],["Journee","☀️ Jour"],["Heure","⏱️ Heure"]].map(([k,l])=><button key={k} onClick={()=>setModeFilter(k)} style={{flexShrink:0,background:modeFilter===k?T.teal:T.surface,border:"none",borderRadius:8,padding:"5px 10px",fontSize:10,fontWeight:600,color:modeFilter===k?T.bg:T.sub,whiteSpace:"nowrap"}}>{l}</button>)}
+    </div>
     <div style={{display:"flex",gap:4,marginBottom:12,overflowX:"auto"}}>
       {Object.entries(tabLabels).map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{flexShrink:0,background:tab===k?T.accent:T.surface,border:"none",borderRadius:8,padding:"7px 10px",fontSize:10,fontWeight:700,color:tab===k?T.bg:T.text,whiteSpace:"nowrap"}}>{l}</button>)}
     </div>
@@ -719,12 +826,17 @@ function Reservations({T,rooms,reservations,setReservations,hid,flash,addService
     {shown.map(res=>{
       const isActive=!res.cancelled&&today>=res.checkin&&today<res.checkout;
       const lc=res.cancelled?T.red:isActive?T.green:T.blue;
+      const modeIco=LOCATION_ICO[res.locationMode||"Nuit"];
       return(<div key={res.id} onClick={()=>setModal(res)} style={{background:T.surface,borderRadius:12,padding:12,marginBottom:8,borderLeft:`4px solid ${lc}`,cursor:"pointer"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start"}}>
           <div>
             <div style={{fontWeight:700,fontSize:14}}>{res.clientName}</div>
-            <div style={{fontSize:11,color:T.sub,marginTop:2}}>Ch.{res.roomNum} · {res.checkin} → {res.checkout} · {res.nights}n</div>
-            <div style={{fontSize:10,color:T.mute}}>{res.adults||1}A{res.children>0?` ${res.children}E`:""} · {res.source||"Direct"}</div>
+            <div style={{fontSize:11,color:T.sub,marginTop:2}}>Ch.{res.roomNum} · {res.checkin}{res.checkinTime?` ${res.checkinTime}`:""}{res.checkoutTime?` → ${res.checkoutTime}`:res.checkout?` → ${res.checkout}`:""}</div>
+            <div style={{fontSize:10,color:T.mute,display:"flex",gap:6,alignItems:"center",marginTop:2}}>
+              <span>{modeIco} <b style={{color:T.teal}}>{res.dureLabel||`${res.nights||1}n`}</b></span>
+              <span>·</span><span>{res.adults||1}A{res.children>0?` ${res.children}E`:""}</span>
+              <span>·</span><span>{res.source||"Direct"}</span>
+            </div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{fontWeight:800,color:T.accent,fontSize:13}}>{fmtF(res.paid||res.roomTotal||0)}</div>
@@ -925,8 +1037,13 @@ function Rapports({T,rooms,reservations,expenses,services,hotelName,whatsapp}){
   const byType={};res.forEach(r=>{byType[r.roomType]=(byType[r.roomType]||0)+(r.paid||0);});
   const byPay={};res.forEach(r=>{byPay[r.payMethod]=(byPay[r.payMethod]||0)+(r.paid||0);});
   const bySrc={};res.forEach(r=>{bySrc[r.source||"Direct"]=(bySrc[r.source||"Direct"]||0)+1;});
+  /* FN8 — CA par mode de location */
+  const byMode={};res.forEach(r=>{const m=r.locationMode||"Nuit";byMode[m]=(byMode[m]||0)+(r.paid||0);});
+  const byModeCount={};res.forEach(r=>{const m=r.locationMode||"Nuit";byModeCount[m]=(byModeCount[m]||0)+1;});
   const revPAR=res.length?rev/Math.max(1,res.reduce((s,r)=>s+(r.nights||1),0)):0;
-  const sendWA=()=>{const pl=period==="today"?"Aujourd hui":period==="month"?cm:cy;const msg=`📊 RAPPORT ${hotelName}\n📅 Periode: ${pl}\n\n🏨 Occupation: ${taux}% (${occ}/${actif})\n\n💰 RECETTES\n• Hebergement: ${fmtF(rev)}\n• Services: ${fmtF(srvR)}\n• TOTAL: ${fmtF(totR)}\n\n📉 DEPENSES: ${fmtF(totE)}\n📈 BENEFICE: ${fmtF(profit)}\n\n📊 Reservations: ${res.length}\n✈️ Clients: ${new Set(res.map(r=>r.clientName)).size}\n🌙 Nuits vendues: ${res.reduce((s,r)=>s+(r.nights||0),0)}\n💵 RevPAR: ${fmtF(revPAR)}`;window.open(`https://wa.me/${(whatsapp||"").replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`,"_blank");};
+  const sendWA=()=>{const pl=period==="today"?"Aujourd hui":period==="month"?cm:cy;
+    const modeLines=Object.entries(byMode).map(([m,v])=>`• ${LOCATION_ICO[m]} ${m}: ${fmtF(v)} (${byModeCount[m]||0} res.)`).join("\n");
+    const msg=`📊 RAPPORT ${hotelName}\n📅 Periode: ${pl}\n\n🏨 Occupation: ${taux}% (${occ}/${actif})\n\n💰 RECETTES\n• Hebergement: ${fmtF(rev)}\n• Services: ${fmtF(srvR)}\n• TOTAL: ${fmtF(totR)}\n\n⏱️ PAR MODE\n${modeLines}\n\n📉 DEPENSES: ${fmtF(totE)}\n📈 BENEFICE: ${fmtF(profit)}\n\n📊 Reservations: ${res.length}\n✈️ Clients: ${new Set(res.map(r=>r.clientName)).size}\n🌙 Nuits vendues: ${res.reduce((s,r)=>s+(r.nights||0),0)}\n💵 RevPAR: ${fmtF(revPAR)}`;window.open(`https://wa.me/${(whatsapp||"").replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`,"_blank");};
   const Block=({title,rows})=>(<div style={{background:T.surface,borderRadius:14,padding:14,marginTop:10}}>
     <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>{title}</div>
     {rows.map(([l,v,c],i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${T.border}`,fontSize:12}}><span style={{color:T.sub}}>{l}</span><span style={{fontWeight:700,color:c||T.text}}>{v}</span></div>)}
@@ -940,6 +1057,8 @@ function Rapports({T,rooms,reservations,expenses,services,hotelName,whatsapp}){
     {Object.keys(byType).length>0&&<Block title="🛏️ CA par type chambre" rows={Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([t,v])=>[t,fmtF(v),T.accent])}/>}
     {Object.keys(byPay).length>0&&<Block title="💳 Par mode de paiement" rows={Object.entries(byPay).sort((a,b)=>b[1]-a[1]).map(([p,v])=>[p,fmtF(v),T.blue])}/>}
     {Object.keys(bySrc).length>0&&<Block title="🌐 Sources" rows={Object.entries(bySrc).sort((a,b)=>b[1]-a[1]).map(([s,c])=>[s,`${c} res.`,T.purple])}/>}
+    {/* FN8 */}
+    {Object.keys(byMode).length>0&&<Block title="⏱️ CA par mode de location" rows={Object.entries(byMode).sort((a,b)=>b[1]-a[1]).map(([m,v])=>[`${LOCATION_ICO[m]||""} ${m} (${byModeCount[m]||0} res.)`,fmtF(v),m==="Heure"?T.purple:m==="Journee"?T.orange:T.blue])}/>}
     <button onClick={sendWA} style={{width:"100%",marginTop:12,background:T.gB.bg,border:`1px solid ${T.gB.bd}`,borderRadius:12,padding:13,color:T.green,fontWeight:700,fontSize:14}}>📱 Envoyer rapport WhatsApp</button>
   </div>);
 }
@@ -1003,6 +1122,499 @@ function Params({T,session,hid,rooms,reservations,expenses,services,clients,updP
 }
 
 /* ═══════════════════════════════════════════════
+   MODULE CAISSE RAPIDE
+   Encaissement rapide par chambre (heure/jour/nuit)
+   Tableau recettes lun→dim + rapport semaine
+   PIN individuel par caissière
+═══════════════════════════════════════════════ */
+const JOURS_SEMAINE=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+const JOURS_LONG=["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
+
+/* Retourne le lundi de la semaine contenant `ts` */
+function getLundi(ts){
+  const d=new Date(ts);const day=(d.getDay()+6)%7;
+  d.setDate(d.getDate()-day);d.setHours(0,0,0,0);return d;
+}
+function getWeekDays(lundi){
+  return Array.from({length:7},(_,i)=>{const d=new Date(lundi);d.setDate(d.getDate()+i);return d.toISOString().slice(0,10);});
+}
+
+/* ── ECRAN LOGIN CAISSIERE ── */
+function CaisseLogin({T,caissières,hid,onLogin}){
+  const [sel,setSel]=useState(null);
+  const [pin,setPin]=useState("");
+  const [err,setErr]=useState("");
+  const [shake,setShake]=useState(false);
+
+  const tap=d=>{
+    if(d==="⌫"){setPin(v=>v.slice(0,-1));setErr("");}
+    else if(pin.length<4)setPin(v=>v+d);
+  };
+  useEffect(()=>{
+    if(!sel||pin.length<4)return;
+    const c=caissières.find(x=>x.id===sel.id);
+    if(btoa(pin)===(c.pin||btoa("0000"))){onLogin(c);}
+    else{setErr("PIN incorrect");setShake(true);setTimeout(()=>{setShake(false);setPin("");},700);}
+  },[pin]);
+
+  if(!sel)return(
+    <div style={{flex:1,overflowY:"auto",padding:16}}>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontSize:36,marginBottom:6}}>💰</div>
+        <div style={{fontWeight:900,fontSize:20,color:"var(--accent, #F5C842)"}}>Caisse Rapide</div>
+        <div style={{fontSize:11,color:"var(--mute)"}}>Sélectionnez votre profil</div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,maxWidth:340,margin:"0 auto"}}>
+        {caissières.filter(c=>c.active!==false).map(c=>(
+          <button key={c.id} onClick={()=>{setSel(c);setPin("");setErr("");}}
+            style={{background:T.surface,border:`2px solid ${T.border}`,borderRadius:16,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:"border-color .15s"}}>
+            <div style={{width:44,height:44,borderRadius:"50%",background:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:18,color:T.bg,flexShrink:0}}>{(c.nom||"?")[0].toUpperCase()}</div>
+            <div style={{textAlign:"left"}}>
+              <div style={{fontWeight:700,fontSize:14,color:T.text}}>{c.nom}</div>
+              <div style={{fontSize:10,color:T.mute}}>{c.role||"Caissière"}</div>
+            </div>
+            <span style={{marginLeft:"auto",color:T.mute,fontSize:18}}>›</span>
+          </button>
+        ))}
+        {caissières.length===0&&<div style={{textAlign:"center",padding:32,color:T.mute,fontSize:13}}>Aucune caissière configurée.<br/>Voir Admin → Caisse.</div>}
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:T.surface,borderRadius:24,padding:24,width:"100%",maxWidth:320,border:`1px solid ${T.border}`}}>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{width:56,height:56,borderRadius:"50%",background:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:24,color:T.bg,margin:"0 auto 8px"}}>{(sel.nom||"?")[0].toUpperCase()}</div>
+          <div style={{fontWeight:800,fontSize:16}}>{sel.nom}</div>
+          <div style={{fontSize:11,color:T.mute}}>Entrez votre PIN</div>
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"center",marginBottom:12,animation:shake?"shake .35s":undefined}}>
+          {[0,1,2,3].map(i=><div key={i} style={{width:14,height:14,borderRadius:"50%",background:i<pin.length?(err?T.red:T.accent):T.border}}/>)}
+        </div>
+        {err&&<div style={{textAlign:"center",fontSize:12,color:T.red,marginBottom:8}}>{err}</div>}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,maxWidth:240,margin:"0 auto"}}>
+          {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>(
+            <button key={i} onClick={()=>d!==""&&tap(String(d))}
+              style={{background:d===""?"transparent":T.sur2,border:`1px solid ${d===""?"transparent":T.border}`,borderRadius:12,height:52,fontSize:20,fontWeight:600,color:d==="⌫"?T.red:T.text,cursor:d===""?"default":"pointer"}}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <button onClick={()=>{setSel(null);setPin("");setErr("");}} style={{width:"100%",marginTop:14,background:"transparent",border:"none",color:T.mute,fontSize:12}}>← Changer de profil</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── ENCAISSEMENT RAPIDE ── */
+function EncaissementForm({T,rooms,onSave,onClose}){
+  const now=new Date();
+  const [roomId,setRoomId]=useState("");
+  const [mode,setMode]=useState("Nuit");
+  const [dateD,setDateD]=useState(dKey(Date.now()));
+  const [heureD,setHeureD]=useState(now.toTimeString().slice(0,5));
+  const [heureFin,setHeureFin]=useState("");
+  const [nbUnites,setNbUnites]=useState("1");
+  const [montant,setMontant]=useState("");
+  const [payMethod,setPayMethod]=useState("Especes");
+  const [clientNom,setClientNom]=useState("");
+  const [note,setNote]=useState("");
+
+  const room=rooms.find(r=>r.id===roomId);
+  const tarif=mode==="Heure"?parseInt(room?.priceHour||0):mode==="Journee"?parseInt(room?.priceDay||room?.price||0):parseInt(room?.price||0);
+  const nb=parseInt(nbUnites||1);
+
+  // Calcul auto du montant si tarif connu
+  useEffect(()=>{
+    if(tarif&&nb)setMontant(String(tarif*nb));
+  },[roomId,mode,nb,tarif]);
+
+  // Calcul nb unités auto pour mode Heure
+  useEffect(()=>{
+    if(mode==="Heure"&&heureD&&heureFin){
+      const ci=new Date(`2000-01-01T${heureD}`),co=new Date(`2000-01-01T${heureFin}`);
+      if(co>ci)setNbUnites(String(Math.ceil((co-ci)/3600000)));
+    }
+  },[heureD,heureFin,mode]);
+
+  const total=parseInt(montant||0);
+  const label=mode==="Heure"?`${nb}h`:mode==="Journee"?`${nb}j`:`${nb}n`;
+  const canSave=roomId&&total>0&&clientNom.trim();
+
+  return(
+    <div style={{background:T.surface,borderRadius:20,padding:18,margin:"0 auto",maxWidth:480}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontWeight:800,fontSize:16}}>⚡ Encaissement rapide</div>
+        <button onClick={onClose} style={{background:T.rB.bg,border:"none",borderRadius:8,padding:"4px 12px",color:T.red,fontSize:16}}>✕</button>
+      </div>
+
+      {/* Chambre */}
+      <SelField T={T} label="Chambre *" value={roomId} onChange={v=>setRoomId(v)}
+        opts={[{v:"",l:"-- Choisir chambre --"},...rooms.filter(r=>r.status!=="maintenance").map(r=>({v:r.id,l:`Ch.${r.num} — ${r.type}${r.priceHour?` (${fmtF(r.priceHour)}/h · ${fmtF(r.price)}/n)`:`(${fmtF(r.price)}/nuit)`}`}))]}/>
+
+      {/* Mode location */}
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:11,color:T.mute,marginBottom:5,fontWeight:600}}>Mode de location</div>
+        <div style={{display:"flex",gap:4}}>
+          {LOCATION_MODES.map(m=>(
+            <button key={m} onClick={()=>{setMode(m);setNbUnites("1");}}
+              style={{flex:1,background:mode===m?T.accent:T.sur2,border:`1px solid ${mode===m?T.accent:T.border}`,borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:700,color:mode===m?T.bg:T.text}}>
+              {LOCATION_ICO[m]} {m}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Date & durée */}
+      <Field T={T} label="Date" type="date" value={dateD} onChange={setDateD}/>
+      {mode==="Heure"?(
+        <G2>
+          <Field T={T} label="Heure arrivée" type="time" value={heureD} onChange={setHeureD}/>
+          <Field T={T} label="Heure départ" type="time" value={heureFin} onChange={setHeureFin}/>
+        </G2>
+      ):(
+        <Field T={T} label={mode==="Nuit"?"Nombre de nuits":"Nombre de jours"} value={nbUnites} onChange={v=>setNbUnites(v.replace(/\D/g,""))}/>
+      )}
+
+      {/* Affichage tarif & total */}
+      {room&&<div style={{background:T.sur2,borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{color:T.mute}}>{LOCATION_ICO[mode]} {label} × {fmtF(tarif||0)}</span>
+        <span style={{fontWeight:800,color:T.accent,fontSize:14}}>{fmtF((tarif||0)*nb)}</span>
+      </div>}
+
+      {/* Client + montant */}
+      <Field T={T} label="Nom client *" value={clientNom} onChange={setClientNom}/>
+      <G2>
+        <Field T={T} label="Montant encaissé (F) *" value={montant} onChange={v=>setMontant(v.replace(/\D/g,""))}/>
+        <SelField T={T} label="Paiement" value={payMethod} onChange={setPayMethod} opts={PAY_METHODS}/>
+      </G2>
+      <Field T={T} label="Note (optionnel)" value={note} onChange={setNote}/>
+
+      <button onClick={()=>{if(!canSave)return;onSave({roomId,roomNum:room?.num,roomType:room?.type,locationMode:mode,dateD,heureD,heureFin,nbUnites:nb,dureLabel:label,clientNom:clientNom.trim(),montant:total,payMethod,note:note.trim(),ts:Date.now()});}}
+        disabled={!canSave}
+        style={{width:"100%",background:canSave?T.accent:T.mute,border:"none",borderRadius:12,padding:13,fontWeight:800,fontSize:14,color:T.bg,opacity:canSave?1:.5,marginTop:4}}>
+        💾 Enregistrer l'encaissement
+      </button>
+    </div>
+  );
+}
+
+/* ── MODULE PRINCIPAL CAISSE RAPIDE ── */
+function CaisseRapide({T,hid,rooms,flash,session}){
+  /* ── État caissières ── */
+  const [caissières,setCaissières]=useState(()=>lsGet(hid,"caissières"));
+  const [caissSession,setCaissSession]=useState(null); // caissière connectée
+  const [view,setView]=useState("accueil"); // accueil | encaissement | recettes | admin
+  const [encaissements,setEncaissements]=useState(()=>lsGet(hid,"encaissements"));
+  const [showForm,setShowForm]=useState(false);
+  const [semOffset,setSemOffset]=useState(0); // 0=semaine courante, -1=précédente...
+  const [adminMode,setAdminMode]=useState(false);
+  const [adminPin,setAdminPin]=useState("");
+  const [adminErr,setAdminErr]=useState("");
+
+  /* Sync Firestore */
+  useEffect(()=>{ if(!db)return;
+    const u1=db.collection("shops").doc(hid).collection("caissières").onSnapshot(s=>{const d=s.docs.map(x=>({id:x.id,...x.data()})).filter(x=>x.id!=="_init");lsSet(hid,"caissières",d);setCaissières(d);},(e)=>{});
+    const u2=db.collection("shops").doc(hid).collection("encaissements").onSnapshot(s=>{const d=s.docs.map(x=>({id:x.id,...x.data()})).filter(x=>x.id!=="_init");lsSet(hid,"encaissements",d);setEncaissements(d);},(e)=>{});
+    return()=>{u1();u2();};
+  },[hid]);
+
+  /* ── Sauvegarde encaissement ── */
+  const saveEncaissement=async d=>{
+    const id=uid();
+    const rec={...d,id,caissiereId:caissSession?.id,caissiereNom:caissSession?.nom||"—"};
+    const u=[rec,...encaissements];setEncaissements(u);lsSet(hid,"encaissements",u);
+    await fsSet(hid,"encaissements",id,rec);
+    flash(`✅ ${fmtF(d.montant)} encaissé — Ch.${d.roomNum}`);
+    setShowForm(false);
+  };
+
+  /* ── Calcul semaine ── */
+  const lundi=getLundi(Date.now());
+  lundi.setDate(lundi.getDate()+semOffset*7);
+  const weekDays=getWeekDays(lundi);
+  const weekLabel=`${lundi.toLocaleDateString("fr-FR",{day:"2-digit",month:"short"})} — ${new Date(weekDays[6]).toLocaleDateString("fr-FR",{day:"2-digit",month:"short",year:"numeric"})}`;
+
+  const encSemaine=encaissements.filter(e=>weekDays.includes(e.dateD||dKey(e.ts)));
+  const totalSemaine=encSemaine.reduce((s,e)=>s+(e.montant||0),0);
+  const parJour=weekDays.map(d=>({
+    d, label:JOURS_SEMAINE[weekDays.indexOf(d)],
+    items:encaissements.filter(e=>(e.dateD||dKey(e.ts))===d),
+    total:encaissements.filter(e=>(e.dateD||dKey(e.ts))===d).reduce((s,e)=>s+(e.montant||0),0),
+  }));
+  const maxJour=Math.max(...parJour.map(j=>j.total),1);
+
+  /* ── Admin caissières (depuis panneau admin principal) ── */
+  const [newNom,setNewNom]=useState("");const [newRole,setNewRole]=useState("Caissière");
+  const [newPin,setNewPin]=useState("");const [newPin2,setNewPin2]=useState("");
+  const saveCaissière=async()=>{
+    if(!newNom.trim()||newPin.length!==4||newPin!==newPin2){flash("Vérifiez nom + PIN (4 chiffres identiques)","warn");return;}
+    const c={id:uid(),nom:newNom.trim(),role:newRole,pin:btoa(newPin),active:true,createdAt:Date.now()};
+    const u=[...caissières,c];setCaissières(u);lsSet(hid,"caissières",u);await fsSet(hid,"caissières",c.id,c);
+    setNewNom("");setNewPin("");setNewPin2("");flash(`Caissière ${c.nom} créée !`);
+  };
+  const toggleCaiss=async c=>{const u=caissières.map(x=>x.id===c.id?{...x,active:!x.active}:x);setCaissières(u);lsSet(hid,"caissières",u);await fsUpd(hid,"caissières",c.id,{active:!c.active});};
+  const delCaiss=async c=>{if(!confirm(`Supprimer ${c.nom} ?`))return;const u=caissières.filter(x=>x.id!==c.id);setCaissières(u);lsSet(hid,"caissières",u);await fsDel(hid,"caissières",c.id);};
+
+  /* ─── si pas de session caissière → écran login ─── */
+  if(!caissSession) return(
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",background:T.bg}}>
+      <div style={{background:T.header,padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+        <div style={{fontWeight:900,fontSize:16,color:T.accent}}>💰 Caisse Rapide</div>
+        <div style={{fontSize:10,color:T.mute}}>{session?.shopName||""}</div>
+      </div>
+      <CaisseLogin T={T} caissières={caissières} hid={hid} onLogin={c=>{setCaissSession(c);setView("accueil");}}/>
+    </div>
+  );
+
+  /* ─── Interface caissière connectée ─── */
+  const today=dKey(Date.now());
+  const totalAujourd=encaissements.filter(e=>(e.dateD||dKey(e.ts))===today).reduce((s,e)=>s+(e.montant||0),0);
+  const mesEnc=encaissements.filter(e=>e.caissiereId===caissSession.id&&(e.dateD||dKey(e.ts))===today);
+
+  return(
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",background:T.bg}}>
+
+      {/* HEADER CAISSE */}
+      <div style={{background:T.header,padding:"8px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+        <div>
+          <div style={{fontSize:8,color:T.mute,letterSpacing:1.5,fontWeight:700}}>CAISSE RAPIDE</div>
+          <div style={{fontWeight:800,fontSize:14,color:T.accent}}>💰 {caissSession.nom}</div>
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <div style={{background:T.gB.bg,border:`1px solid ${T.gB.bd}`,borderRadius:8,padding:"3px 10px",fontSize:11,color:T.green,fontWeight:700}}>{fmtF(totalAujourd)}</div>
+          <button onClick={()=>setCaissSession(null)} style={{background:T.rB.bg,border:`1px solid ${T.rB.bd}`,borderRadius:8,padding:"4px 10px",color:T.red,fontSize:11,fontWeight:700}}>⏏ Quitter</button>
+        </div>
+      </div>
+
+      {/* NAV CAISSE */}
+      <div style={{display:"flex",background:T.sur2,borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+        {[["accueil","🏠","Accueil"],["encaisser","⚡","Encaisser"],["recettes","📊","Recettes"]].map(([k,e,l])=>(
+          <button key={k} onClick={()=>setView(k)} style={{flex:1,background:view===k?T.accent:"transparent",border:"none",padding:"10px 4px",fontWeight:700,fontSize:10,color:view===k?T.bg:T.mute,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+            <span style={{fontSize:18}}>{e}</span>{l}
+          </button>
+        ))}
+      </div>
+
+      {/* CONTENU */}
+      <div style={{flex:1,overflowY:"auto",padding:12}}>
+
+        {/* ─ ACCUEIL ─ */}
+        {view==="accueil"&&(<>
+          <div style={{background:`linear-gradient(135deg,${T.accent}22,${T.teal}11)`,border:`1px solid ${T.accent}33`,borderRadius:16,padding:16,marginBottom:12,textAlign:"center"}}>
+            <div style={{fontSize:11,color:T.mute,marginBottom:4}}>Encaissements du jour</div>
+            <div style={{fontSize:32,fontWeight:900,color:T.accent}}>{fmtF(totalAujourd)}</div>
+            <div style={{fontSize:11,color:T.sub,marginTop:4}}>{encaissements.filter(e=>(e.dateD||dKey(e.ts))===today).length} encaissement(s)</div>
+          </div>
+          {/* Bouton gros encaisser */}
+          <button onClick={()=>{setShowForm(true);setView("encaisser");}} style={{width:"100%",background:T.accent,border:"none",borderRadius:14,padding:16,fontWeight:900,fontSize:16,color:T.bg,marginBottom:12}}>
+            ⚡ Nouvel encaissement
+          </button>
+          {/* Mes encaissements du jour */}
+          <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:T.text}}>Mes encaissements — {new Date().toLocaleDateString("fr-FR")}</div>
+          {mesEnc.length===0&&<div style={{textAlign:"center",padding:24,color:T.mute,fontSize:12}}>Aucun encaissement aujourd'hui</div>}
+          {[...mesEnc].sort((a,b)=>b.ts-a.ts).map(e=>(
+            <div key={e.id} style={{background:T.surface,borderRadius:12,padding:"10px 14px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:`4px solid ${T.teal}`}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:13}}>Ch.{e.roomNum} — {e.clientNom}</div>
+                <div style={{fontSize:10,color:T.mute}}>{LOCATION_ICO[e.locationMode||"Nuit"]} {e.dureLabel} · {e.payMethod} · {e.heureD||""}{ e.heureFin?`→${e.heureFin}`:""}</div>
+              </div>
+              <span style={{fontWeight:900,color:T.accent,fontSize:14}}>{fmtF(e.montant)}</span>
+            </div>
+          ))}
+        </>)}
+
+        {/* ─ ENCAISSER ─ */}
+        {view==="encaisser"&&(<>
+          {showForm
+            ?<EncaissementForm T={T} rooms={rooms} onSave={saveEncaissement} onClose={()=>setShowForm(false)}/>
+            :<div style={{textAlign:"center",paddingTop:32}}>
+              <button onClick={()=>setShowForm(true)} style={{background:T.accent,border:"none",borderRadius:14,padding:"16px 32px",fontWeight:900,fontSize:16,color:T.bg}}>⚡ Nouveau encaissement</button>
+              {/* Liste des derniers */}
+              <div style={{marginTop:20,textAlign:"left"}}>
+                <div style={{fontWeight:700,fontSize:12,color:T.mute,marginBottom:8}}>DERNIERS ENCAISSEMENTS</div>
+                {[...encaissements].sort((a,b)=>b.ts-a.ts).slice(0,10).map(e=>(
+                  <div key={e.id} style={{background:T.surface,borderRadius:10,padding:"8px 12px",marginBottom:5,display:"flex",justifyContent:"space-between",borderLeft:`3px solid ${T.teal}`}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:700}}>Ch.{e.roomNum} · {e.clientNom}</div>
+                      <div style={{fontSize:10,color:T.mute}}>{e.dateD} {e.heureD||""} · {LOCATION_ICO[e.locationMode||"Nuit"]}{e.dureLabel} · {e.caissiereNom}</div>
+                    </div>
+                    <span style={{fontWeight:800,color:T.accent,fontSize:13}}>{fmtF(e.montant)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          }
+        </>)}
+
+        {/* ─ RECETTES SEMAINE ─ */}
+        {view==="recettes"&&(<>
+          {/* Navigateur semaine */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:T.surface,borderRadius:12,padding:"10px 14px",marginBottom:12}}>
+            <button onClick={()=>setSemOffset(o=>o-1)} style={{background:T.sur2,border:"none",borderRadius:8,padding:"6px 12px",color:T.text,fontWeight:700}}>‹</button>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontWeight:800,fontSize:13,color:T.accent}}>{semOffset===0?"Semaine en cours":semOffset===-1?"Semaine dernière":`Sem. ${Math.abs(semOffset)} passée(s)`}</div>
+              <div style={{fontSize:10,color:T.mute}}>{weekLabel}</div>
+            </div>
+            <button onClick={()=>setSemOffset(o=>Math.min(0,o+1))} style={{background:T.sur2,border:"none",borderRadius:8,padding:"6px 12px",color:T.text,fontWeight:700}}>›</button>
+          </div>
+
+          {/* Total semaine */}
+          <div style={{background:`linear-gradient(135deg,${T.accent}22,${T.teal}11)`,border:`1px solid ${T.accent}33`,borderRadius:14,padding:14,marginBottom:12,textAlign:"center"}}>
+            <div style={{fontSize:11,color:T.mute}}>Total semaine</div>
+            <div style={{fontSize:28,fontWeight:900,color:T.accent}}>{fmtF(totalSemaine)}</div>
+            <div style={{fontSize:11,color:T.sub,marginTop:2}}>{encSemaine.length} encaissement(s)</div>
+          </div>
+
+          {/* Graphique barres Lun→Dim */}
+          <div style={{background:T.surface,borderRadius:14,padding:14,marginBottom:12}}>
+            <div style={{fontWeight:700,fontSize:12,marginBottom:10,color:T.text}}>📊 Recettes par jour</div>
+            <div style={{display:"flex",alignItems:"flex-end",gap:4,height:80}}>
+              {parJour.map((j,i)=>{
+                const isToday=j.d===today;
+                const h=j.total?Math.max(8,Math.round((j.total/maxJour)*72)):0;
+                return(
+                  <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                    {j.total>0&&<div style={{fontSize:7,color:T.accent,fontWeight:700,whiteSpace:"nowrap"}}>{fmtF(j.total).replace(" F","")}</div>}
+                    <div style={{width:"100%",background:isToday?T.accent:T.teal,borderRadius:"4px 4px 0 0",height:h,minHeight:j.total?8:0,opacity:isToday?1:.7}}/>
+                    <div style={{fontSize:8,fontWeight:isToday?800:500,color:isToday?T.accent:T.mute}}>{j.label}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Détail jour par jour */}
+          {parJour.map((j,i)=>(
+            <div key={i} style={{background:T.surface,borderRadius:12,marginBottom:8,overflow:"hidden",border:`1px solid ${j.d===today?T.accent+"44":T.border}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:j.d===today?T.accent+"11":T.sur2}}>
+                <div style={{fontWeight:800,fontSize:13,color:j.d===today?T.accent:T.text}}>{JOURS_LONG[i]} <span style={{fontSize:10,color:T.mute,fontWeight:500}}>{new Date(j.d+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"short"})}</span></div>
+                <div style={{fontWeight:900,color:j.total>0?T.accent:T.mute,fontSize:13}}>{j.total>0?fmtF(j.total):"—"}</div>
+              </div>
+              {j.items.length>0&&j.items.map(e=>(
+                <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px",borderTop:`1px solid ${T.border}`}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700}}>Ch.{e.roomNum} — {e.clientNom}</div>
+                    <div style={{fontSize:9,color:T.mute}}>{LOCATION_ICO[e.locationMode||"Nuit"]}{e.dureLabel} · {e.payMethod} · {e.heureD||""}{e.heureFin?`→${e.heureFin}`:""} · {e.caissiereNom}</div>
+                  </div>
+                  <span style={{fontWeight:800,color:T.teal,fontSize:12}}>{fmtF(e.montant)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+
+          {/* Rapport par mode */}
+          {encSemaine.length>0&&(()=>{
+            const byM={};encSemaine.forEach(e=>{const m=e.locationMode||"Nuit";byM[m]=(byM[m]||0)+(e.montant||0);});
+            return(<div style={{background:T.surface,borderRadius:12,padding:12,marginBottom:10}}>
+              <div style={{fontWeight:700,fontSize:12,marginBottom:8}}>⏱️ Répartition par mode</div>
+              {Object.entries(byM).sort((a,b)=>b[1]-a[1]).map(([m,v])=>(
+                <div key={m} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${T.border}`,fontSize:12}}>
+                  <span>{LOCATION_ICO[m]} {m}</span>
+                  <span style={{fontWeight:700,color:T.accent}}>{fmtF(v)}</span>
+                </div>
+              ))}
+            </div>);
+          })()}
+
+          {/* Rapport par caissière */}
+          {encSemaine.length>0&&(()=>{
+            const byC={};encSemaine.forEach(e=>{const n=e.caissiereNom||"?";byC[n]=(byC[n]||0)+(e.montant||0);});
+            return(<div style={{background:T.surface,borderRadius:12,padding:12,marginBottom:10}}>
+              <div style={{fontWeight:700,fontSize:12,marginBottom:8}}>👤 Recettes par caissière</div>
+              {Object.entries(byC).sort((a,b)=>b[1]-a[1]).map(([n,v])=>(
+                <div key={n} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${T.border}`,fontSize:12}}>
+                  <span>{n}</span>
+                  <span style={{fontWeight:700,color:T.teal}}>{fmtF(v)}</span>
+                </div>
+              ))}
+            </div>);
+          })()}
+
+          {/* Rapport par mode de paiement */}
+          {encSemaine.length>0&&(()=>{
+            const byP={};encSemaine.forEach(e=>{const p=e.payMethod||"?";byP[p]=(byP[p]||0)+(e.montant||0);});
+            return(<div style={{background:T.surface,borderRadius:12,padding:12,marginBottom:12}}>
+              <div style={{fontWeight:700,fontSize:12,marginBottom:8}}>💳 Par mode de paiement</div>
+              {Object.entries(byP).sort((a,b)=>b[1]-a[1]).map(([p,v])=>(
+                <div key={p} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${T.border}`,fontSize:12}}>
+                  <span>{p}</span>
+                  <span style={{fontWeight:700,color:T.blue}}>{fmtF(v)}</span>
+                </div>
+              ))}
+            </div>);
+          })()}
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+/* ── GESTION CAISSIÈRES (onglet admin) ── */
+function AdminCaissières({T,hid,flash}){
+  const [caissières,setCaissières]=useState(()=>lsGet(hid,"caissières"));
+  const [newNom,setNewNom]=useState("");const [newRole,setNewRole]=useState("Caissière");
+  const [newPin,setNewPin]=useState("");const [newPin2,setNewPin2]=useState("");
+
+  useEffect(()=>{if(!db)return;return db.collection("shops").doc(hid).collection("caissières").onSnapshot(s=>{const d=s.docs.map(x=>({id:x.id,...x.data()})).filter(x=>x.id!=="_init");lsSet(hid,"caissières",d);setCaissières(d);},(e)=>{});},[hid]);
+
+  const save=async()=>{
+    if(!newNom.trim()||newPin.length!==4||newPin!==newPin2){flash("Nom requis + PIN 4 chiffres identiques","warn");return;}
+    const c={id:uid(),nom:newNom.trim(),role:newRole,pin:btoa(newPin),active:true,createdAt:Date.now()};
+    const u=[...caissières,c];setCaissières(u);lsSet(hid,"caissières",u);await fsSet(hid,"caissières",c.id,c);
+    setNewNom("");setNewPin("");setNewPin2("");flash(`Caissière ${c.nom} créée !`);
+  };
+  const toggle=async c=>{const u=caissières.map(x=>x.id===c.id?{...x,active:!x.active}:x);setCaissières(u);lsSet(hid,"caissières",u);await fsUpd(hid,"caissières",c.id,{active:!c.active});};
+  const del=async c=>{if(!confirm(`Supprimer ${c.nom} ?`))return;const u=caissières.filter(x=>x.id!==c.id);setCaissières(u);lsSet(hid,"caissières",u);await fsDel(hid,"caissières",c.id);flash("Caissière supprimée");};
+  const resetPin=async(c,pin)=>{if(pin.length!==4){flash("PIN = 4 chiffres","warn");return;}await fsUpd(hid,"caissières",c.id,{pin:btoa(pin)});const u=caissières.map(x=>x.id===c.id?{...x,pin:btoa(pin)}:x);setCaissières(u);lsSet(hid,"caissières",u);flash(`PIN de ${c.nom} modifié`);};
+
+  const [editPin,setEditPin]=useState({});
+
+  return(<div style={{flex:1,overflowY:"auto",padding:12}}>
+    {/* Formulaire création */}
+    <div style={{background:T.surface,borderRadius:16,padding:16,marginBottom:14}}>
+      <div style={{fontWeight:800,fontSize:14,marginBottom:12,color:T.accent}}>➕ Nouvelle caissière</div>
+      <G2><Field T={T} label="Nom" value={newNom} onChange={setNewNom} req/>
+      <SelField T={T} label="Rôle" value={newRole} onChange={setNewRole} opts={["Caissière","Réceptionniste","Manager","Autre"]}/></G2>
+      <G2>
+        <Field T={T} label="PIN (4 chiffres)" type="password" value={newPin} onChange={v=>setNewPin(v.replace(/\D/g,"").slice(0,4))} req/>
+        <Field T={T} label="Confirmer PIN" type="password" value={newPin2} onChange={v=>setNewPin2(v.replace(/\D/g,"").slice(0,4))} req/>
+      </G2>
+      <button onClick={save} style={{width:"100%",background:T.accent,border:"none",borderRadius:10,padding:11,fontWeight:700,color:T.bg,fontSize:13}}>💾 Créer la caissière</button>
+    </div>
+
+    {/* Liste caissières */}
+    <div style={{fontWeight:700,fontSize:12,color:T.mute,letterSpacing:1,marginBottom:8}}>CAISSIÈRES ENREGISTRÉES ({caissières.length})</div>
+    {caissières.length===0&&<div style={{textAlign:"center",padding:24,color:T.mute}}>Aucune caissière</div>}
+    {caissières.map(c=>(
+      <div key={c.id} style={{background:T.surface,borderRadius:14,padding:14,marginBottom:8,borderLeft:`4px solid ${c.active!==false?T.green:T.mute}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:40,height:40,borderRadius:"50%",background:c.active!==false?T.accent:T.mute,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:16,color:T.bg}}>{(c.nom||"?")[0].toUpperCase()}</div>
+            <div>
+              <div style={{fontWeight:700,fontSize:14}}>{c.nom}</div>
+              <div style={{fontSize:10,color:T.mute}}>{c.role||"Caissière"} · {c.active!==false?"Active":"Inactive"}</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:5}}>
+            <button onClick={()=>toggle(c)} style={{background:c.active!==false?T.oB.bg:T.gB.bg,border:"none",borderRadius:7,padding:"4px 10px",fontSize:10,color:c.active!==false?T.orange:T.green,fontWeight:600}}>{c.active!==false?"Suspendre":"Activer"}</button>
+            <button onClick={()=>del(c)} style={{background:T.rB.bg,border:"none",borderRadius:7,padding:"4px 10px",fontSize:10,color:T.red}}>🗑️</button>
+          </div>
+        </div>
+        {/* Modifier PIN */}
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <input type="password" placeholder="Nouveau PIN (4 chiffres)" maxLength={4}
+            value={editPin[c.id]||""} onChange={e=>setEditPin(p=>({...p,[c.id]:e.target.value.replace(/\D/g,"").slice(0,4)}))}
+            style={{flex:1,background:T.inp,border:`1px solid ${T.inpB}`,borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12}}/>
+          <button onClick={()=>resetPin(c,editPin[c.id]||"")} style={{background:T.bB.bg,border:`1px solid ${T.bB.bd}`,borderRadius:8,padding:"6px 12px",color:T.blue,fontSize:11,fontWeight:600}}>🔐 Changer PIN</button>
+        </div>
+      </div>
+    ))}
+  </div>);
+}
+
+/* ═══════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════ */
 function MainApp({session,T,themeName,setThemeName,logout,flash}){
@@ -1012,6 +1624,8 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
   const [expenses,setExpenses]=useState(()=>lsGet(hid,"expenses"));
   const [services,setServices]=useState(()=>lsGet(hid,"services"));
   const [clients,setClients]=useState(()=>lsGet(hid,"clients"));
+  // Exposer setReservations pour checkout rapide dans Chambres
+  useEffect(()=>{window.__setReservations=setReservations;},[setReservations]);
   const [tab,setTab]=useState("dashboard");
   const [adminOpen,setAdminOpen]=useState(false);const [adminTab,setAdminTab]=useState("clients");
   const [pinModal,setPinModal]=useState(false);const [pinErr,setPinErr]=useState("");
@@ -1027,14 +1641,15 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
   const cin=reservations.filter(r=>!r.cancelled&&r.checkin===today).length;
   const cout=reservations.filter(r=>!r.cancelled&&r.checkout===today).length;
 
-  const MTABS=[{k:"dashboard",e:"📊",l:"Tableau de bord"},{k:"chambres",e:"🛏️",l:"Chambres"},{k:"reservations",e:"📅",l:"Reservations"},{k:"services",e:"🍽️",l:"Services"},{k:"rapports",e:"📈",l:"Rapports"}];
-  const ATABS=[{k:"clients",e:"👤",l:"Clients"},{k:"depenses",e:"💸",l:"Depenses"},{k:"params",e:"⚙️",l:"Parametres"}];
+  const MTABS=[{k:"dashboard",e:"📊",l:"Tableau de bord"},{k:"chambres",e:"🛏️",l:"Chambres"},{k:"reservations",e:"📅",l:"Reservations"},{k:"caisse",e:"💰",l:"Caisse Rapide"},{k:"services",e:"🍽️",l:"Services"},{k:"rapports",e:"📈",l:"Rapports"}];
+  const ATABS=[{k:"clients",e:"👤",l:"Clients"},{k:"caissières",e:"💰",l:"Caissières"},{k:"depenses",e:"💸",l:"Depenses"},{k:"params",e:"⚙️",l:"Parametres"}];
 
   const renderMain=()=>{
     const p={T,hid,flash};
     if(tab==="dashboard")return<Dashboard T={T} rooms={rooms} reservations={reservations} expenses={expenses} services={services} hotelName={session.shopName} hotelPhone={session.shopPhone} whatsapp={session.whatsapp}/>;
     if(tab==="chambres")return<Chambres {...p} rooms={rooms} setRooms={setRooms} reservations={reservations}/>;
     if(tab==="reservations")return<Reservations {...p} rooms={rooms} reservations={reservations} setReservations={setReservations} addService={addService} hotelName={session.shopName} hotelPhone={session.shopPhone} hotelAddress={session.address} useBLE={useBLE} setUseBLE={setUseBLE}/>;
+    if(tab==="caisse")return<CaisseRapide T={T} hid={hid} rooms={rooms} flash={flash} session={session}/>;
     if(tab==="services")return<Services {...p} services={services} setServices={setServices} reservations={reservations}/>;
     if(tab==="rapports")return<Rapports T={T} rooms={rooms} reservations={reservations} expenses={expenses} services={services} hotelName={session.shopName} whatsapp={session.whatsapp}/>;
     return null;
@@ -1042,6 +1657,7 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
   const renderAdmin=()=>{
     const p={T,hid,flash};
     if(adminTab==="clients")return<Clients {...p} clients={clients} setClients={setClients} reservations={reservations}/>;
+    if(adminTab==="caissières")return<AdminCaissières T={T} hid={hid} flash={flash}/>;
     if(adminTab==="depenses")return<Depenses {...p} expenses={expenses} setExpenses={setExpenses}/>;
     if(adminTab==="params")return<Params {...p} session={session} rooms={rooms} reservations={reservations} expenses={expenses} services={services} clients={clients} updPin={updPin}/>;
     return null;
@@ -1081,7 +1697,7 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
       <div className="bottom-nav">
         {MTABS.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{flex:1,background:"transparent",border:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 0",color:tab===t.k?T.accent:T.mute,fontSize:8,fontWeight:600}}>
           <span style={{fontSize:18}}>{t.e}</span>
-          {t.k==="dashboard"?"Board":t.k==="chambres"?"Chambres":t.k==="reservations"?"Res.":t.k==="services"?"Services":"Stats"}
+          {t.k==="dashboard"?"Board":t.k==="chambres"?"Ch.":t.k==="reservations"?"Rés.":t.k==="caisse"?"Caisse":t.k==="services"?"Srv":"Stats"}
         </button>)}
         <button onClick={()=>{setPinModal(true);setPinErr("");}} style={{flex:1,background:"transparent",border:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 0",color:T.purple,fontSize:8,fontWeight:700}}>
           <span style={{fontSize:18}}>👑</span>Admin
