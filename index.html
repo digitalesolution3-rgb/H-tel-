@@ -315,6 +315,79 @@ function browserPrint(hotel,res,extras,total){
 }
 
 /* ═══════════════════════════════════════════════
+   FICHE DE RENSEIGNEMENT : PDF + NOTIF WHATSAPP
+═══════════════════════════════════════════════ */
+let LIBS_LOADING=null;
+function loadPdfLibs(){
+  if(window.jspdf&&window.html2canvas)return Promise.resolve();
+  if(LIBS_LOADING)return LIBS_LOADING;
+  LIBS_LOADING=new Promise((resolve,reject)=>{
+    const s1=document.createElement("script");s1.src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+    s1.onload=()=>{
+      if(window.jspdf){resolve();return;}
+      const s2=document.createElement("script");s2.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+      s2.onload=()=>resolve();s2.onerror=reject;document.head.appendChild(s2);
+    };
+    s1.onerror=reject;document.head.appendChild(s1);
+  });
+  return LIBS_LOADING;
+}
+function ficheRow(l,v){return `<div style="display:flex;font-size:13px;padding:3px 0;"><div style="width:190px;font-weight:600;flex-shrink:0;">${l}</div><div style="flex:1;border-bottom:1px dotted #999;min-height:16px;">${v||""}</div></div>`;}
+async function genererFichePDF(hotel,fiche,res){
+  await loadPdfLibs();
+  const wrap=document.createElement("div");
+  wrap.style.cssText="position:fixed;left:-9999px;top:0;width:720px;background:#fff;padding:36px;font-family:Georgia,'Times New Roman',serif;color:#111;";
+  wrap.innerHTML=`
+    <div style="text-align:center;border-bottom:2px solid #333;padding-bottom:12px;margin-bottom:18px;">
+      <div style="font-size:19px;font-weight:bold;letter-spacing:.5px;">${hotel.name||""}</div>
+      ${hotel.tagline?`<div style="font-size:13px;margin-top:4px;">${hotel.tagline}</div>`:""}
+      <div style="font-size:12px;margin-top:4px;">${[hotel.phone?`Tél : ${hotel.phone}`:"",hotel.address||""].filter(Boolean).join(" — ")}</div>
+    </div>
+    <div>
+      ${ficheRow("Je soussigné(e)",fiche.clientName||res.clientName)}
+      ${ficheRow("Profession",fiche.profession)}
+      ${ficheRow("CNIB/Passeport n°",fiche.docNumber)}
+      ${ficheRow("Né(e) le",fiche.dob)}
+      ${ficheRow("Tél",fiche.clientPhone||res.clientPhone)}
+      ${ficheRow("Provenance",fiche.provenance)}
+      ${ficheRow("Motif du voyage",fiche.motif)}
+      ${ficheRow("Date d'entrée",res.checkin)}
+      ${ficheRow("N° de chambre",res.roomNum)}
+      ${ficheRow("Date de départ",res.checkout||"—")}
+      ${ficheRow("Nombre nuitées",res.nights||1)}
+      ${ficheRow("Nationalité",fiche.nationality||res.nationality)}
+      ${ficheRow("Moyen de transport",fiche.transport)}
+      ${ficheRow("Immatriculation",fiche.immat)}
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:56px;">
+      <div style="text-align:center;">
+        <div style="font-size:12px;margin-bottom:8px;">Le Client</div>
+        ${fiche.signature?`<img src="${fiche.signature}" style="width:170px;height:68px;object-fit:contain;border-bottom:1px solid #333;"/>`:`<div style="width:170px;height:68px;border-bottom:1px solid #333;"></div>`}
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:12px;margin-bottom:8px;">Le Réceptionniste</div>
+        <div style="width:170px;height:68px;border-bottom:1px solid #333;"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const canvas=await window.html2canvas(wrap,{scale:2,backgroundColor:"#fff"});
+  document.body.removeChild(wrap);
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({unit:"pt",format:"a4"});
+  const pageW=pdf.internal.pageSize.getWidth();
+  const imgW=pageW-40;const imgH=canvas.height*(imgW/canvas.width);
+  pdf.addImage(canvas.toDataURL("image/png"),"PNG",20,20,imgW,imgH);
+  pdf.save(`fiche_${(fiche.clientName||res.clientName||"client").replace(/\s+/g,"_")}_${res.roomNum||""}.pdf`);
+}
+function envoyerNotifWhatsApp(fiche,res,hotel){
+  const tel=(fiche.whatsapp||fiche.clientPhone||res.clientPhone||"").replace(/\D/g,"");
+  if(!tel){alert("Aucun numero WhatsApp renseigne");return;}
+  const heure=res.checkoutTime||"12h00";
+  const msg=`Bonjour ${res.clientName}, ici ${hotel.name||"l hotel"}. Nous vous rappelons que la chambre ${res.roomNum} devra etre liberee le ${res.checkout||res.checkin} a ${heure}. Merci de votre sejour !`;
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,"_blank");
+}
+
+/* ═══════════════════════════════════════════════
    UI ATOMS
 ═══════════════════════════════════════════════ */
 function ToastStack({toasts}){
@@ -356,6 +429,29 @@ function SelField({T,label,value,onChange,opts,disabled}){
 function G2({children,gap=8}){return(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap}}>{children}</div>);}
 function G3({children,gap=8}){return(<div className="grid-3c" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap}}>{children}</div>);}
 function G4({children,gap=8}){return(<div className="grid-4c" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap}}>{children}</div>);}
+
+function SignaturePad({T,value,onChange}){
+  const canvasRef=useRef(null);
+  const drawing=useRef(false);
+  const last=useRef({x:0,y:0});
+  useEffect(()=>{
+    const c=canvasRef.current;if(!c)return;
+    const ctx=c.getContext("2d");
+    ctx.fillStyle="#fff";ctx.fillRect(0,0,c.width,c.height);
+    if(value){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,c.width,c.height);img.src=value;}
+  },[]);
+  const pos=(e,c)=>{const r=c.getBoundingClientRect();const t=e.touches&&e.touches[0]?e.touches[0]:e;return{x:(t.clientX-r.left)*(c.width/r.width),y:(t.clientY-r.top)*(c.height/r.height)};};
+  const start=e=>{drawing.current=true;last.current=pos(e,canvasRef.current);};
+  const move=e=>{if(!drawing.current)return;e.preventDefault();const c=canvasRef.current;const ctx=c.getContext("2d");const p=pos(e,c);ctx.strokeStyle="#1a1a1a";ctx.lineWidth=2.4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(last.current.x,last.current.y);ctx.lineTo(p.x,p.y);ctx.stroke();last.current=p;};
+  const end=()=>{if(!drawing.current)return;drawing.current=false;onChange(canvasRef.current.toDataURL("image/png"));};
+  const clear=()=>{const c=canvasRef.current;const ctx=c.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,c.width,c.height);onChange("");};
+  return(<div>
+    <canvas ref={canvasRef} width={400} height={160} style={{width:"100%",height:150,background:"#fff",borderRadius:10,border:`1px solid ${T.inpB}`,touchAction:"none"}}
+      onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+      onTouchStart={start} onTouchMove={move} onTouchEnd={end}/>
+    <button onClick={clear} type="button" style={{marginTop:6,background:T.sur2,border:"none",borderRadius:8,padding:"6px 12px",fontSize:11,color:T.sub}}>🗑️ Effacer signature</button>
+  </div>);
+}
 
 function PinPad({T,length=4,onConfirm,onCancel,title,subtitle,err}){
   const [val,setVal]=useState("");const [shake,setShake]=useState(false);
@@ -649,7 +745,46 @@ function Chambres({T,rooms,setRooms,reservations,hid,flash}){
 /* ═══════════════════════════════════════════════
    RÉSERVATIONS
 ═══════════════════════════════════════════════ */
-function Reservations({T,rooms,reservations,setReservations,hid,flash,addService,hotelName,hotelPhone,hotelAddress,useBLE,setUseBLE}){
+function FicheForm({T,res,fiche,hotel,hid,flash,onSave,onClose}){
+  const [f,setF]=useState(()=>fiche||{profession:"",docNumber:res.clientNID||"",dob:"",clientPhone:res.clientPhone||"",whatsapp:res.clientPhone||"",provenance:"",motif:"",transport:"",immat:"",nationality:res.nationality||"",signature:""});
+  const [saving,setSaving]=useState(false);
+  const [pdfBusy,setPdfBusy]=useState(false);
+  const save=async()=>{
+    setSaving(true);
+    const id=fiche?.id||uid();
+    const data={...f,id,reservationId:res.id,clientName:res.clientName,roomNum:res.roomNum,checkin:res.checkin,checkout:res.checkout,nights:res.nights,updatedAt:Date.now()};
+    try{await fsSet(hid,"fiches",id,data);}catch{}
+    onSave(data);
+    setSaving(false);
+    flash("Fiche enregistree !");
+  };
+  const doPdf=async()=>{
+    setPdfBusy(true);
+    try{await genererFichePDF(hotel,f,res);}catch{flash("Erreur generation PDF","err");}
+    setPdfBusy(false);
+  };
+  return(<Modal T={T} title="📋 Fiche de renseignement" onClose={onClose} wide>
+    <div style={{background:T.sur2,borderRadius:12,padding:12,marginBottom:12,fontSize:12}}>
+      <b>{res.clientName}</b> — Ch.{res.roomNum} — {res.checkin} → {res.checkout||"—"} ({res.nights||1} nuit{(res.nights||1)>1?"s":""})
+    </div>
+    <G2><Field T={T} label="Profession" value={f.profession} onChange={v=>setF(p=>({...p,profession:v}))}/><Field T={T} label="CNIB/Passeport n°" value={f.docNumber} onChange={v=>setF(p=>({...p,docNumber:v}))}/></G2>
+    <G2><Field T={T} label="Ne(e) le" type="date" value={f.dob} onChange={v=>setF(p=>({...p,dob:v}))}/><Field T={T} label="Nationalite" value={f.nationality} onChange={v=>setF(p=>({...p,nationality:v}))}/></G2>
+    <G2><Field T={T} label="Telephone" value={f.clientPhone} onChange={v=>setF(p=>({...p,clientPhone:v}))}/><Field T={T} label="WhatsApp (pour notif.)" value={f.whatsapp} onChange={v=>setF(p=>({...p,whatsapp:v}))} ph="226xxxxxxxx"/></G2>
+    <Field T={T} label="Provenance" value={f.provenance} onChange={v=>setF(p=>({...p,provenance:v}))}/>
+    <Field T={T} label="Motif du voyage" value={f.motif} onChange={v=>setF(p=>({...p,motif:v}))}/>
+    <G2><Field T={T} label="Moyen de transport" value={f.transport} onChange={v=>setF(p=>({...p,transport:v}))}/><Field T={T} label="Immatriculation" value={f.immat} onChange={v=>setF(p=>({...p,immat:v}))}/></G2>
+    <div style={{fontSize:11,color:T.teal,fontWeight:700,letterSpacing:.5,marginTop:6,marginBottom:8}}>● SIGNATURE DU CLIENT</div>
+    <SignaturePad T={T} value={f.signature} onChange={v=>setF(p=>({...p,signature:v}))}/>
+    <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap"}}>
+      <button onClick={onClose} style={{flex:"1 1 100px",background:T.sur2,border:"none",borderRadius:10,padding:11,color:T.text}}>Fermer</button>
+      <button onClick={()=>envoyerNotifWhatsApp(f,res,hotel)} style={{flex:"1 1 140px",background:T.gB.bg,border:`1px solid ${T.gB.bd}`,borderRadius:10,padding:11,color:T.green,fontWeight:700}}>📱 Notifier client</button>
+      <button onClick={doPdf} disabled={pdfBusy} style={{flex:"1 1 140px",background:T.bB.bg,border:`1px solid ${T.bB.bd}`,borderRadius:10,padding:11,color:T.blue,fontWeight:700,opacity:pdfBusy?.6:1}}>{pdfBusy?"...":"📄 PDF"}</button>
+      <button onClick={save} disabled={saving} style={{flex:"1 1 140px",background:T.accent,border:"none",borderRadius:10,padding:11,color:T.bg,fontWeight:800,opacity:saving?.6:1}}>{saving?"...":"💾 Enregistrer"}</button>
+    </div>
+  </Modal>);
+}
+
+function Reservations({T,rooms,reservations,setReservations,hid,flash,addService,hotelName,hotelPhone,hotelAddress,hotelTagline,useBLE,setUseBLE,fiches,setFiches}){
   const [tab,setTab]=useState("current");const [modal,setModal]=useState(null);const [form,setForm]=useState(null);const [q,setQ]=useState("");const [modeFilter,setModeFilter]=useState("all");
   const today=dKey(Date.now());
   const tabs={
@@ -753,6 +888,8 @@ function Reservations({T,rooms,reservations,setReservations,hid,flash,addService
   const ResDetail=({res,onClose})=>{
     const [cancelMode,setCancelMode]=useState(false);const [cancelReason,setCancelReason]=useState("");
     const [srvMode,setSrvMode]=useState(false);const [srvCat,setSrvCat]=useState("Autre");const [srvLabel,setSrvLabel]=useState("");const [srvAmt,setSrvAmt]=useState("");
+    const [ficheOpen,setFicheOpen]=useState(false);
+    const fiche=(fiches||[]).find(x=>x.reservationId===res.id);
     const isActive=!res.cancelled&&today>=res.checkin&&today<res.checkout;
     const statusLabel=res.cancelled?"ANNULE":isActive?"EN COURS":today<res.checkin?"A VENIR":"PASSE";
     const statusCol=res.cancelled?T.red:isActive?T.green:today<res.checkin?T.blue:T.mute;
@@ -778,6 +915,8 @@ function Reservations({T,rooms,reservations,setReservations,hid,flash,addService
       {!res.cancelled&&(<>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
           <button onClick={()=>printRes(res)} style={{flex:"1 1 auto",background:T.bB.bg,border:`1px solid ${T.bB.bd}`,borderRadius:10,padding:"8px",color:T.blue,fontSize:12,fontWeight:600}}>🖨️ Imprimer</button>
+          <button onClick={()=>envoyerNotifWhatsApp(fiche||{},res,{name:hotelName})} style={{flex:"1 1 auto",background:T.gB.bg,border:`1px solid ${T.gB.bd}`,borderRadius:10,padding:"8px",color:T.green,fontSize:12,fontWeight:600}}>📱 WhatsApp</button>
+          <button onClick={()=>setFicheOpen(true)} style={{flex:"1 1 auto",background:T.pB.bg,border:`1px solid ${T.pB.bd}`,borderRadius:10,padding:"8px",color:T.purple,fontSize:12,fontWeight:600}}>📋 Fiche{fiche?" ✓":""}</button>
           <button onClick={()=>{setForm(res);onClose();}} style={{flex:"1 1 auto",background:T.sur2,border:"none",borderRadius:10,padding:"8px",color:T.text,fontSize:12}}>✏️ Modifier</button>
           {isActive&&!res.checkedOut&&<button onClick={()=>{doCheckout(res);onClose();}} style={{flex:"1 1 auto",background:T.gB.bg,border:`1px solid ${T.gB.bd}`,borderRadius:10,padding:"8px",color:T.green,fontSize:12,fontWeight:600}}>📤 Check-out</button>}
           <button onClick={()=>setCancelMode(true)} style={{flex:"1 1 auto",background:T.rB.bg,border:`1px solid ${T.rB.bd}`,borderRadius:10,padding:"8px",color:T.red,fontSize:12}}>✕ Annuler</button>
@@ -805,6 +944,9 @@ function Reservations({T,rooms,reservations,setReservations,hid,flash,addService
         </div>
       </>)}
       {res.cancelled&&<div style={{background:T.rB.bg,border:`1px solid ${T.rB.bd}`,borderRadius:12,padding:12,marginTop:10,fontSize:12,color:T.red}}>❌ Annule : {res.cancelReason||"—"}</div>}
+      {ficheOpen&&<FicheForm T={T} res={res} fiche={fiche} hotel={{name:hotelName,phone:hotelPhone,address:hotelAddress,tagline:hotelTagline}} hid={hid} flash={flash}
+        onSave={d=>{const u=fiche?(fiches||[]).map(x=>x.id===d.id?d:x):[...(fiches||[]),d];setFiches(u);lsSet(hid,"fiches",u);}}
+        onClose={()=>setFicheOpen(false)}/>}
     </Modal>);
   };
 
@@ -1069,9 +1211,9 @@ function Rapports({T,rooms,reservations,expenses,services,hotelName,whatsapp}){
 ═══════════════════════════════════════════════ */
 function Params({T,session,hid,rooms,reservations,expenses,services,clients,updPin,flash}){
   const [tab,setTab]=useState("hotel");
-  const [hf,setHf]=useState({name:session.shopName||"",phone:session.shopPhone||"",address:session.address||"",email:session.email||"",stars:session.stars||3,website:session.website||""});
+  const [hf,setHf]=useState({name:session.shopName||"",phone:session.shopPhone||"",address:session.address||"",email:session.email||"",stars:session.stars||3,website:session.website||"",tagline:session.tagline||""});
   const [pin1,setPin1]=useState("");const [pin2,setPin2]=useState("");
-  const saveHotel=()=>{if(db)db.collection("shops").doc(hid).update({shopName:hf.name,shopPhone:hf.phone,address:hf.address,email:hf.email,stars:hf.stars,website:hf.website});Object.assign(session,{shopName:hf.name,shopPhone:hf.phone,address:hf.address});flash("Hotel mis a jour !");};
+  const saveHotel=()=>{if(db)db.collection("shops").doc(hid).update({shopName:hf.name,shopPhone:hf.phone,address:hf.address,email:hf.email,stars:hf.stars,website:hf.website,tagline:hf.tagline});Object.assign(session,{shopName:hf.name,shopPhone:hf.phone,address:hf.address,tagline:hf.tagline});flash("Hotel mis a jour !");};
   const savePin=()=>{if(pin1.length!==4){flash("PIN = 4 chiffres","warn");return;}if(pin1!==pin2){flash("PIN ne correspondent pas","warn");return;}updPin(pin1);setPin1("");setPin2("");};
   const exportCSV=()=>{const hd=["Date","Client","Chambre","Nuits","Montant","Paiement","Source"];const rows=reservations.filter(r=>!r.cancelled).map(r=>[r.checkin,r.clientName,r.roomNum,r.nights,r.paid,r.payMethod,r.source]);const csv=[hd,...rows].map(r=>r.map(v=>v===undefined?"":v).join(";")).join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(csv);a.download=`reservations_${dKey(Date.now())}.csv`;a.click();flash("CSV telecharge !");};
   const exportJSON=()=>{const d=JSON.stringify({rooms,reservations,expenses,services,clients},null,2);const a=document.createElement("a");a.href="data:application/json,"+encodeURIComponent(d);a.download=`backup_hotel_${dKey(Date.now())}.json`;a.click();flash("JSON telecharge !");};
@@ -1086,6 +1228,7 @@ function Params({T,session,hid,rooms,reservations,expenses,services,clients,updP
     {tab==="hotel"&&<div style={{background:T.surface,borderRadius:14,padding:16}}>
       <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>🏨 Informations de l hotel</div>
       <Field T={T} label="Nom de l hotel" value={hf.name} onChange={v=>setHf(p=>({...p,name:v}))}/>
+      <Field T={T} label="Sous-titre / Slogan (en-tete fiche & PDF)" value={hf.tagline} onChange={v=>setHf(p=>({...p,tagline:v}))} ph="Ex: Chambres ventilees et climatisees, bar &amp; restaurant"/>
       <G2><Field T={T} label="Telephone" value={hf.phone} onChange={v=>setHf(p=>({...p,phone:v}))}/><Field T={T} label="Email" value={hf.email} onChange={v=>setHf(p=>({...p,email:v}))}/></G2>
       <Field T={T} label="Adresse" value={hf.address} onChange={v=>setHf(p=>({...p,address:v}))}/>
       <Field T={T} label="Site web" value={hf.website||""} onChange={v=>setHf(p=>({...p,website:v}))}/>
@@ -1624,6 +1767,7 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
   const [expenses,setExpenses]=useState(()=>lsGet(hid,"expenses"));
   const [services,setServices]=useState(()=>lsGet(hid,"services"));
   const [clients,setClients]=useState(()=>lsGet(hid,"clients"));
+  const [fiches,setFiches]=useState(()=>lsGet(hid,"fiches"));
   // Exposer setReservations pour checkout rapide dans Chambres
   useEffect(()=>{window.__setReservations=setReservations;},[setReservations]);
   const [tab,setTab]=useState("dashboard");
@@ -1632,7 +1776,7 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
   const [useBLE,setUseBLE]=useState(true);
   const [searchOpen,setSearchOpen]=useState(false);
 
-  useEffect(()=>syncCollections(hid,{rooms:setRooms,reservations:setReservations,expenses:setExpenses,services:setServices,clients:setClients}),[hid]);
+  useEffect(()=>syncCollections(hid,{rooms:setRooms,reservations:setReservations,expenses:setExpenses,services:setServices,clients:setClients,fiches:setFiches}),[hid]);
 
   const addService=async srv=>{const s={...srv,id:uid(),ts:Date.now()};const u=[s,...services];setServices(u);lsSet(hid,"services",u);await fsSet(hid,"services",s.id,s);flash(`Service: ${srv.label} (${fmtF(srv.amount)})`);};
   const updPin=async p=>{await db?.collection("shops").doc(hid).update({adminPin:btoa(p)});session.adminPin=btoa(p);flash("PIN modifie !");};
@@ -1648,7 +1792,7 @@ function MainApp({session,T,themeName,setThemeName,logout,flash}){
     const p={T,hid,flash};
     if(tab==="dashboard")return<Dashboard T={T} rooms={rooms} reservations={reservations} expenses={expenses} services={services} hotelName={session.shopName} hotelPhone={session.shopPhone} whatsapp={session.whatsapp}/>;
     if(tab==="chambres")return<Chambres {...p} rooms={rooms} setRooms={setRooms} reservations={reservations}/>;
-    if(tab==="reservations")return<Reservations {...p} rooms={rooms} reservations={reservations} setReservations={setReservations} addService={addService} hotelName={session.shopName} hotelPhone={session.shopPhone} hotelAddress={session.address} useBLE={useBLE} setUseBLE={setUseBLE}/>;
+    if(tab==="reservations")return<Reservations {...p} rooms={rooms} reservations={reservations} setReservations={setReservations} addService={addService} hotelName={session.shopName} hotelPhone={session.shopPhone} hotelAddress={session.address} hotelTagline={session.tagline} useBLE={useBLE} setUseBLE={setUseBLE} fiches={fiches} setFiches={setFiches}/>;
     if(tab==="caisse")return<CaisseRapide T={T} hid={hid} rooms={rooms} flash={flash} session={session}/>;
     if(tab==="services")return<Services {...p} services={services} setServices={setServices} reservations={reservations}/>;
     if(tab==="rapports")return<Rapports T={T} rooms={rooms} reservations={reservations} expenses={expenses} services={services} hotelName={session.shopName} whatsapp={session.whatsapp}/>;
@@ -1912,7 +2056,7 @@ function App(){
       const id="hotel_"+Date.now()+"_"+Math.random().toString(36).slice(2,7);
       const now=Date.now();
       await db.collection("shops").doc(id).set({shopName:f.shopName.trim(),ownerName:f.ownerName.trim(),whatsapp:f.whatsapp.trim(),shopPhone:f.phone.trim(),password:btoa(f.password),createdAt:now,active:true,plan:"mensuel",subscriptionStart:now,subscriptionEnd:calcEnd(now,"mensuel"),adminPin:btoa("0000"),type:"hotel"});
-      for(const col of ["rooms","reservations","expenses","services","clients"]){await db.collection("shops").doc(id).collection(col).doc("_init").set({_init:true});}
+      for(const col of ["rooms","reservations","expenses","services","clients","fiches"]){await db.collection("shops").doc(id).collection(col).doc("_init").set({_init:true});}
       flash("Hotel cree ! Connectez-vous.");setMode("login");
     }catch(e){setErr(e.message);}
     setLoading(false);
